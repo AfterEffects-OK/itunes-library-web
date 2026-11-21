@@ -36,16 +36,20 @@
 
     html {
       width: 100%;
-      overflow-x: hidden;
+      height: 100dvh;
+      overflow: hidden;
       -webkit-text-size-adjust: 100%;
     }
 
     body {
       margin: 0;
-      padding: 0 0 calc(108px + var(--safe-bottom));
+      padding: 0;
       width: 100%;
+      height: 100dvh;
       max-width: 100%;
-      overflow-x: hidden;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
       background: var(--bg);
       color: var(--text);
@@ -53,10 +57,13 @@
       -webkit-font-smoothing: antialiased;
     }
 
+    body.has-player {
+      padding-bottom: calc(64px + var(--safe-bottom));
+    }
+
     /* ヘッダー */
     .app-header {
-      position: sticky;
-      top: 0;
+      flex-shrink: 0;
       z-index: 25;
       width: 100%;
       background: rgba(12, 15, 22, 0.96);
@@ -184,15 +191,21 @@
     }
 
     .app-main {
+      flex: 1;
+      min-height: 0;
       width: 100%;
       max-width: 1720px;
       margin: 0 auto;
-      padding: 10px 14px;
+      padding: 10px 14px 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
 
     /* 進捗バー */
     .progress-wrap {
       display: none;
+      flex-shrink: 0;
       width: 100%;
       background: var(--surface);
       border: 1px solid var(--border);
@@ -223,6 +236,7 @@
 
     /* 検索・連動フィルタエリア */
     .filter-panel {
+      flex-shrink: 0;
       width: 100%;
       min-width: 0;
       background: var(--surface);
@@ -286,6 +300,7 @@
 
     /* ステータスバー */
     .stats-bar {
+      flex-shrink: 0;
       width: 100%;
       min-width: 0;
       display: flex;
@@ -309,6 +324,17 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    /* 曲リスト専用スクロール領域 */
+    .list-scroll-area {
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
     }
 
     /* PC用テーブル一覧 */
@@ -498,7 +524,7 @@
 
     .more-wrap {
       text-align: center;
-      padding: 12px 0 4px;
+      padding: 12px 0 6px;
       width: 100%;
     }
 
@@ -811,10 +837,13 @@
       }
     }
 
-    /* スマホ幅（768px以下）：プルダウン常時表示＆省スクロール */
+    /* スマホ幅（768px以下）：プルダウン常時表示＆曲リストのみスクロール */
     @media screen and (max-width: 768px) {
+      body.has-player {
+        padding-bottom: calc(96px + var(--safe-bottom));
+      }
+
       .app-header {
-        position: static;
         padding: calc(7px + var(--safe-top)) 10px 7px;
         gap: 6px;
       }
@@ -841,7 +870,7 @@
       }
 
       .app-main {
-        padding: 8px 10px;
+        padding: 8px 10px 10px;
       }
 
       .filter-panel {
@@ -1020,35 +1049,38 @@
       <div id="syncMeta">未同期</div>
     </div>
 
-    <!-- PC用テーブル一覧 -->
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th class="no-sort">試聴</th>
-            <th data-sort="name">曲名<span class="sort-mark"></span></th>
-            <th data-sort="album">アルバム名<span class="sort-mark"></span></th>
-            <th data-sort="track" class="num">曲番号<span class="sort-mark"></span></th>
-            <th data-sort="disc" class="num">アルバム番号<span class="sort-mark"></span></th>
-            <th data-sort="artist">アーティスト名<span class="sort-mark"></span></th>
-            <th data-sort="comments">備考<span class="sort-mark"></span></th>
-            <th data-sort="duration" class="num">再生時間<span class="sort-mark"></span></th>
-            <th data-sort="bitrate" class="num">ビットレート<span class="sort-mark"></span></th>
-            <th data-sort="year" class="num">リリース年<span class="sort-mark"></span></th>
-            <th data-sort="dateAdded">追加日<span class="sort-mark"></span></th>
-            <th data-sort="genre">ジャンル<span class="sort-mark"></span></th>
-            <th data-sort="size" class="num">ファイルサイズ<span class="sort-mark"></span></th>
-          </tr>
-        </thead>
-        <tbody id="trackTbody"></tbody>
-      </table>
-    </div>
+    <!-- 曲リスト専用スクロール領域 -->
+    <div id="listScrollArea" class="list-scroll-area">
+      <!-- PC用テーブル一覧 -->
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="no-sort">試聴</th>
+              <th data-sort="name">曲名<span class="sort-mark"></span></th>
+              <th data-sort="album">アルバム名<span class="sort-mark"></span></th>
+              <th data-sort="track" class="num">曲番号<span class="sort-mark"></span></th>
+              <th data-sort="disc" class="num">アルバム番号<span class="sort-mark"></span></th>
+              <th data-sort="artist">アーティスト名<span class="sort-mark"></span></th>
+              <th data-sort="comments">備考<span class="sort-mark"></span></th>
+              <th data-sort="duration" class="num">再生時間<span class="sort-mark"></span></th>
+              <th data-sort="bitrate" class="num">ビットレート<span class="sort-mark"></span></th>
+              <th data-sort="year" class="num">リリース年<span class="sort-mark"></span></th>
+              <th data-sort="dateAdded">追加日<span class="sort-mark"></span></th>
+              <th data-sort="genre">ジャンル<span class="sort-mark"></span></th>
+              <th data-sort="size" class="num">ファイルサイズ<span class="sort-mark"></span></th>
+            </tr>
+          </thead>
+          <tbody id="trackTbody"></tbody>
+        </table>
+      </div>
 
-    <!-- スマホ用コンパクトカード一覧 -->
-    <div id="mobileList" class="mobile-list"></div>
+      <!-- スマホ用コンパクトカード一覧 -->
+      <div id="mobileList" class="mobile-list"></div>
 
-    <div class="more-wrap">
-      <button type="button" id="loadMoreBtn" style="display:none;">さらに表示（+200件）</button>
+      <div class="more-wrap">
+        <button type="button" id="loadMoreBtn" style="display:none;">さらに表示（+200件）</button>
+      </div>
     </div>
   </main>
 
@@ -1355,6 +1387,7 @@
       resetFiltersBtn: document.getElementById('resetFiltersBtn'),
       resultCount: document.getElementById('resultCount'),
       syncMeta: document.getElementById('syncMeta'),
+      listScrollArea: document.getElementById('listScrollArea'),
       trackTbody: document.getElementById('trackTbody'),
       mobileList: document.getElementById('mobileList'),
       loadMoreBtn: document.getElementById('loadMoreBtn'),
@@ -1638,6 +1671,7 @@
       dom.barAudio.src = '';
       activePlayingId = null;
       dom.playerBar.classList.remove('active');
+      document.body.classList.remove('has-player');
       renderLists();
     }
 
@@ -1650,6 +1684,7 @@
       dom.barTrackArtist.textContent = `${media.artistName || fallbackTrack.artist} — ${media.collectionName || fallbackTrack.album}`;
       dom.barAudio.src = media.previewUrl;
       dom.playerBar.classList.add('active');
+      document.body.classList.add('has-player');
       dom.barAudio.play().catch(() => {});
       renderLists();
     }
@@ -2141,6 +2176,7 @@
       filteredTracks.sort((a, b) => compareTracks(a, b, field, dir));
 
       renderLists();
+      dom.listScrollArea.scrollTop = 0;
     }
 
     function renderLists() {
