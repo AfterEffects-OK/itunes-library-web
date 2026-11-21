@@ -2,8 +2,8 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
-  <title>iTunes ライブラリ検索（スマホ完全対応・URL保存・連動絞り込み）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>iTunes ライブラリ検索（スマホレイアウト修正版）</title>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     :root {
@@ -33,9 +33,15 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    html, body {
+    html {
+      width: 100%;
+      overflow-x: hidden;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
       margin: 0;
-      padding: 0;
+      padding: 0 0 calc(116px + var(--safe-bottom));
       width: 100%;
       max-width: 100%;
       overflow-x: hidden;
@@ -44,21 +50,17 @@
       color: var(--text);
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
-      -webkit-text-size-adjust: 100%;
-    }
-
-    body {
-      padding-bottom: calc(110px + var(--safe-bottom));
     }
 
     /* ヘッダー */
-    header {
+    .app-header {
       position: sticky;
       top: 0;
       z-index: 25;
-      background: rgba(12, 15, 22, 0.95);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
+      width: 100%;
+      background: rgba(12, 15, 22, 0.96);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--border);
       padding: calc(10px + var(--safe-top)) 16px 10px;
       display: flex;
@@ -66,7 +68,6 @@
       gap: 10px;
       align-items: center;
       justify-content: space-between;
-      width: 100%;
     }
 
     .brand {
@@ -101,6 +102,7 @@
       color: var(--muted);
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .badge.ok {
@@ -130,6 +132,7 @@
       gap: 5px;
       min-height: 36px;
       white-space: nowrap;
+      text-decoration: none;
       transition: background 0.14s ease, border-color 0.14s ease;
     }
 
@@ -168,7 +171,7 @@
       font-weight: 600;
     }
 
-    main {
+    .app-main {
       width: 100%;
       max-width: 1720px;
       margin: 0 auto;
@@ -177,13 +180,13 @@
 
     /* 取込ドロップゾーン */
     .dropzone {
+      width: 100%;
       border: 1.5px dashed var(--border-strong);
       background: var(--surface);
       border-radius: var(--radius-md);
       padding: 12px 14px;
       text-align: center;
       margin-bottom: 12px;
-      width: 100%;
     }
 
     .dropzone.dragover {
@@ -206,13 +209,13 @@
     /* 進捗バー */
     .progress-wrap {
       display: none;
+      width: 100%;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
       padding: 12px 14px;
       margin-bottom: 12px;
       font-size: 13px;
-      width: 100%;
     }
 
     .progress-wrap.active {
@@ -236,6 +239,8 @@
 
     /* 検索・連動フィルタカード */
     .filter-panel {
+      width: 100%;
+      min-width: 0;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
@@ -244,24 +249,23 @@
       flex-direction: column;
       gap: 10px;
       margin-bottom: 12px;
-      width: 100%;
-      min-width: 0;
     }
 
     .search-row {
+      width: 100%;
+      min-width: 0;
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 8px;
       align-items: center;
-      width: 100%;
     }
 
     .dropdown-row {
+      width: 100%;
+      min-width: 0;
       display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 8px;
-      width: 100%;
-      min-width: 0;
     }
 
     input, select {
@@ -298,6 +302,8 @@
 
     /* ステータスバー */
     .stats-bar {
+      width: 100%;
+      min-width: 0;
       display: flex;
       flex-wrap: wrap;
       justify-content: space-between;
@@ -307,7 +313,6 @@
       font-size: 12px;
       color: var(--muted);
       font-variant-numeric: tabular-nums;
-      width: 100%;
     }
 
     #resultCount strong {
@@ -414,10 +419,12 @@
       flex-direction: column;
       gap: 10px;
       width: 100%;
+      min-width: 0;
     }
 
     .track-card {
       width: 100%;
+      min-width: 0;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
@@ -510,6 +517,7 @@
       right: 0;
       bottom: 0;
       width: 100%;
+      max-width: 100%;
       z-index: 35;
       background: rgba(21, 25, 36, 0.97);
       backdrop-filter: blur(14px);
@@ -561,6 +569,7 @@
       flex: 1.4;
       height: 36px;
       min-width: 160px;
+      max-width: 100%;
     }
 
     /* モーダル */
@@ -716,8 +725,8 @@
     }
 
     /* スマホ幅（768px以下） */
-    @media (max-width: 768px) {
-      header {
+    @media screen and (max-width: 768px) {
+      .app-header {
         position: static;
         padding: calc(10px + var(--safe-top)) 12px 10px;
         gap: 8px;
@@ -747,7 +756,7 @@
         padding: 8px 10px;
       }
 
-      main {
+      .app-main {
         padding: 10px 12px;
       }
 
@@ -780,16 +789,14 @@
         min-height: 42px;
       }
 
-      /* PCテーブルを確実に非表示、スマホカードを表示 */
       .table-wrap {
-        display: none !important;
+        display: none;
       }
 
       .mobile-list {
-        display: flex !important;
+        display: flex;
       }
 
-      /* ミニプレイヤーをスマホ2段レイアウト化 */
       .player-bar {
         flex-wrap: wrap;
         gap: 8px 10px;
@@ -808,7 +815,6 @@
         height: 40px;
       }
 
-      /* モーダルをボトムシート化 */
       .modal-backdrop {
         align-items: flex-end;
         padding: 0;
@@ -849,7 +855,7 @@
   </style>
 </head>
 <body>
-  <header>
+  <header class="app-header">
     <div class="brand">
       <span style="display:inline-flex;align-items:center;gap:8px;min-width:0;">
         <span class="brand-icon" aria-hidden="true">♪</span>
@@ -860,14 +866,14 @@
     <div class="actions">
       <label class="btn" for="xmlInput">XML / JSON 読込</label>
       <input type="file" id="xmlInput" accept=".xml,.json,text/xml,application/json" hidden />
-      <button id="openExportBtn">JSON出力</button>
-      <button id="openSyncBtn">同期設定</button>
-      <button id="syncNowBtn" class="primary">今すぐ同期</button>
-      <button id="clearDbBtn" class="ghost-danger">DB消去</button>
+      <button type="button" id="openExportBtn">JSON出力</button>
+      <button type="button" id="openSyncBtn">同期設定</button>
+      <button type="button" id="syncNowBtn" class="primary">今すぐ同期</button>
+      <button type="button" id="clearDbBtn" class="ghost-danger">DB消去</button>
     </div>
   </header>
 
-  <main>
+  <main class="app-main">
     <div id="dropzone" class="dropzone">
       <strong>Library.xml または 出力済み JSON を読込</strong>
       <p>JSONファイル URL はブラウザ保存 / 連動プルダウン / ジャケ写＆30秒試聴</p>
@@ -881,7 +887,7 @@
     <div class="filter-panel">
       <div class="search-row">
         <input type="search" id="searchInput" placeholder="フリーワード検索（曲名・アルバム・アーティスト・備考・ジャンル）" />
-        <button id="resetFiltersBtn">条件クリア</button>
+        <button type="button" id="resetFiltersBtn">条件クリア</button>
       </div>
       <div class="dropdown-row">
         <select id="genreFilter" aria-label="ジャンル"><option value="">全ジャンル</option></select>
@@ -950,7 +956,7 @@
     <div id="mobileList" class="mobile-list"></div>
 
     <div class="more-wrap">
-      <button id="loadMoreBtn" style="display:none;">さらに表示（+200件）</button>
+      <button type="button" id="loadMoreBtn" style="display:none;">さらに表示（+200件）</button>
     </div>
   </main>
 
@@ -961,7 +967,7 @@
       <div id="barTrackTitle" class="player-title">-</div>
       <div id="barTrackArtist" class="player-sub">-</div>
     </div>
-    <button id="closePlayerBtn" class="mini">停止</button>
+    <button type="button" id="closePlayerBtn" class="mini">停止</button>
     <audio id="barAudio" controls playsinline></audio>
   </div>
 
@@ -970,7 +976,7 @@
     <div class="modal">
       <div class="modal-head">
         <h2 id="detailTitle">楽曲詳細</h2>
-        <button data-close="detailModal">閉じる</button>
+        <button type="button" data-close="detailModal">閉じる</button>
       </div>
       <div id="artworkPanel" class="artwork-panel">
         <img id="modalArtwork" alt="ジャケット画像" />
@@ -982,8 +988,8 @@
       </div>
       <div id="detailBody" class="field-grid"></div>
       <div class="modal-foot">
-        <button id="fetchMediaBtn" class="primary">ジャケ写・30秒試聴を取得</button>
-        <button data-close="detailModal">閉じる</button>
+        <button type="button" id="fetchMediaBtn" class="primary">ジャケ写・30秒試聴を取得</button>
+        <button type="button" data-close="detailModal">閉じる</button>
       </div>
     </div>
   </div>
@@ -993,7 +999,7 @@
     <div class="modal">
       <div class="modal-head">
         <h2>JSON出力（最大ファイルサイズ指定）</h2>
-        <button data-close="exportModal">閉じる</button>
+        <button type="button" data-close="exportModal">閉じる</button>
       </div>
       <p style="font-size:12.5px;color:var(--muted);margin-top:0;">
         指定した<strong>最大ファイルサイズ</strong>を超えないように自動分割（<code>manifest.json</code> ＋ <code>part-001.json</code> ...）して出力します。
@@ -1010,9 +1016,9 @@
       </div>
       <div id="exportEstimateBox" class="estimate-box">計算中...</div>
       <div class="modal-foot">
-        <button id="exportFolderBtn" class="primary">フォルダへ直接書き出し (PC)</button>
-        <button id="exportZipBtn">ZIPで一括ダウンロード</button>
-        <button id="exportEachBtn">個別ダウンロード</button>
+        <button type="button" id="exportFolderBtn" class="primary">フォルダへ直接書き出し (PC)</button>
+        <button type="button" id="exportZipBtn">ZIPで一括ダウンロード</button>
+        <button type="button" id="exportEachBtn">個別ダウンロード</button>
       </div>
     </div>
   </div>
@@ -1022,7 +1028,7 @@
     <div class="modal">
       <div class="modal-head">
         <h2>サーバー同期設定（ブラウザ保存）</h2>
-        <button data-close="syncModal">閉じる</button>
+        <button type="button" data-close="syncModal">閉じる</button>
       </div>
       <div class="form-row">
         <label for="syncUrlInput">JSONファイル URL（manifest.json または library.json）</label>
@@ -1040,9 +1046,9 @@
         </label>
       </div>
       <div class="modal-foot">
-        <button id="clearSavedUrlBtn">URL設定をクリア</button>
-        <button id="saveSyncBtn" class="primary">保存して同期</button>
-        <button data-close="syncModal">キャンセル</button>
+        <button type="button" id="clearSavedUrlBtn">URL設定をクリア</button>
+        <button type="button" id="saveSyncBtn" class="primary">保存して同期</button>
+        <button type="button" data-close="syncModal">キャンセル</button>
       </div>
     </div>
   </div>
@@ -1056,10 +1062,6 @@
 
     const jaCollator = new Intl.Collator('ja', { numeric: true });
     const jaPlainCollator = new Intl.Collator('ja');
-
-    function isMobileViewport() {
-      return window.innerWidth <= 768;
-    }
 
     function loadSyncConfigFromStorage() {
       try {
@@ -1872,73 +1874,60 @@
 
     function renderLists() {
       const limit = Math.min(displayLimit, filteredTracks.length);
-      const mobile = isMobileViewport();
+      const tableHtml = new Array(limit);
+      const mobileHtml = new Array(limit);
 
-      if (mobile) {
-        const mobileHtml = new Array(limit);
-        for (let i = 0; i < limit; i++) {
-          const t = filteredTracks[i];
-          const isPlaying = activePlayingId === t.id;
-          const trackStr = formatRatio(t.trackNo, t.trackCount);
-          const discStr = formatRatio(t.discNo, t.discCount);
-          const durStr = formatDuration(t.duration);
-          const escGenre = escapeHtml(t.genre);
+      for (let i = 0; i < limit; i++) {
+        const t = filteredTracks[i];
+        const isPlaying = activePlayingId === t.id;
+        const trackStr = formatRatio(t.trackNo, t.trackCount);
+        const discStr = formatRatio(t.discNo, t.discCount);
+        const durStr = formatDuration(t.duration);
+        const bitStr = t.bitrate ? `${t.bitrate} kbps` : '-';
+        const yearStr = t.year || '-';
+        const dateStr = formatDate(t.dateAdded);
+        const sizeStr = formatSize(t.size);
+        const escName = escapeHtml(t.name);
+        const escAlbum = escapeHtml(t.album);
+        const escArtist = escapeHtml(t.artist);
+        const escComments = escapeHtml(t.comments);
+        const escGenre = escapeHtml(t.genre);
 
-          mobileHtml[i] = `<div class="track-card ${isPlaying ? 'playing-card' : ''}" data-idx="${i}">` +
-            `<button type="button" class="card-play preview-btn" data-idx="${i}" aria-label="試聴">${isPlaying ? '♪' : '▶'}</button>` +
-            `<div class="card-main">` +
-            `<div class="card-title">${escapeHtml(t.name || '無題')}</div>` +
-            `<div class="card-sub">${escapeHtml(t.artist || '-')} — ${escapeHtml(t.album || '-')}</div>` +
-            `<div class="card-tags">` +
-            (trackStr !== '-' ? `<span class="tag">曲 ${trackStr}</span>` : '') +
-            (discStr !== '-' ? `<span class="tag">盤 ${discStr}</span>` : '') +
-            `<span class="tag">${durStr}</span>` +
-            (t.year ? `<span class="tag">${t.year}</span>` : '') +
-            (t.genre ? `<span class="tag">${escGenre}</span>` : '') +
-            (t.bitrate ? `<span class="tag">${t.bitrate}kbps</span>` : '') +
-            `</div>` +
-            `</div>` +
-            `</div>`;
-        }
-        dom.mobileList.innerHTML = mobileHtml.join('');
-        dom.trackTbody.innerHTML = '';
-      } else {
-        const tableHtml = new Array(limit);
-        for (let i = 0; i < limit; i++) {
-          const t = filteredTracks[i];
-          const isPlaying = activePlayingId === t.id;
-          const trackStr = formatRatio(t.trackNo, t.trackCount);
-          const discStr = formatRatio(t.discNo, t.discCount);
-          const durStr = formatDuration(t.duration);
-          const bitStr = t.bitrate ? `${t.bitrate} kbps` : '-';
-          const yearStr = t.year || '-';
-          const dateStr = formatDate(t.dateAdded);
-          const sizeStr = formatSize(t.size);
-          const escName = escapeHtml(t.name);
-          const escAlbum = escapeHtml(t.album);
-          const escArtist = escapeHtml(t.artist);
-          const escComments = escapeHtml(t.comments);
-          const escGenre = escapeHtml(t.genre);
+        tableHtml[i] = `<tr data-idx="${i}" class="${isPlaying ? 'playing-row' : ''}">` +
+          `<td><button type="button" class="mini preview-btn" data-idx="${i}" title="30秒試聴">${isPlaying ? '♪ 再生中' : '▶ 試聴'}</button></td>` +
+          `<td class="cell-main" title="${escName}">${escName}</td>` +
+          `<td class="cell-sub" title="${escAlbum}">${escAlbum}</td>` +
+          `<td class="num">${trackStr}</td>` +
+          `<td class="num">${discStr}</td>` +
+          `<td class="cell-sub" title="${escArtist}">${escArtist}</td>` +
+          `<td title="${escComments}">${escComments}</td>` +
+          `<td class="num">${durStr}</td>` +
+          `<td class="num">${bitStr}</td>` +
+          `<td class="num">${yearStr}</td>` +
+          `<td>${dateStr}</td>` +
+          `<td>${escGenre}</td>` +
+          `<td class="num">${sizeStr}</td>` +
+          `</tr>`;
 
-          tableHtml[i] = `<tr data-idx="${i}" class="${isPlaying ? 'playing-row' : ''}">` +
-            `<td><button type="button" class="mini preview-btn" data-idx="${i}" title="30秒試聴">${isPlaying ? '♪ 再生中' : '▶ 試聴'}</button></td>` +
-            `<td class="cell-main" title="${escName}">${escName}</td>` +
-            `<td class="cell-sub" title="${escAlbum}">${escAlbum}</td>` +
-            `<td class="num">${trackStr}</td>` +
-            `<td class="num">${discStr}</td>` +
-            `<td class="cell-sub" title="${escArtist}">${escArtist}</td>` +
-            `<td title="${escComments}">${escComments}</td>` +
-            `<td class="num">${durStr}</td>` +
-            `<td class="num">${bitStr}</td>` +
-            `<td class="num">${yearStr}</td>` +
-            `<td>${dateStr}</td>` +
-            `<td>${escGenre}</td>` +
-            `<td class="num">${sizeStr}</td>` +
-            `</tr>`;
-        }
-        dom.trackTbody.innerHTML = tableHtml.join('');
-        dom.mobileList.innerHTML = '';
+        mobileHtml[i] = `<div class="track-card ${isPlaying ? 'playing-card' : ''}" data-idx="${i}">` +
+          `<button type="button" class="card-play preview-btn" data-idx="${i}" aria-label="試聴">${isPlaying ? '♪' : '▶'}</button>` +
+          `<div class="card-main">` +
+          `<div class="card-title">${escapeHtml(t.name || '無題')}</div>` +
+          `<div class="card-sub">${escapeHtml(t.artist || '-')} — ${escapeHtml(t.album || '-')}</div>` +
+          `<div class="card-tags">` +
+          (trackStr !== '-' ? `<span class="tag">曲 ${trackStr}</span>` : '') +
+          (discStr !== '-' ? `<span class="tag">盤 ${discStr}</span>` : '') +
+          `<span class="tag">${durStr}</span>` +
+          (t.year ? `<span class="tag">${t.year}</span>` : '') +
+          (t.genre ? `<span class="tag">${escGenre}</span>` : '') +
+          (t.bitrate ? `<span class="tag">${t.bitrate}kbps</span>` : '') +
+          `</div>` +
+          `</div>` +
+          `</div>`;
       }
+
+      dom.trackTbody.innerHTML = tableHtml.join('');
+      dom.mobileList.innerHTML = mobileHtml.join('');
 
       dom.resultCount.innerHTML = `表示: <strong>${limit.toLocaleString()}</strong> / 絞込: <strong>${filteredTracks.length.toLocaleString()}</strong> / 総曲数: <strong>${allTracks.length.toLocaleString()}</strong>`;
       dom.loadMoreBtn.style.display = filteredTracks.length > displayLimit ? 'inline-flex' : 'none';
@@ -1961,15 +1950,6 @@
     }
 
     // --- イベント登録 ---
-    let lastIsMobile = isMobileViewport();
-    window.addEventListener('resize', () => {
-      const nowMobile = isMobileViewport();
-      if (nowMobile !== lastIsMobile) {
-        lastIsMobile = nowMobile;
-        renderLists();
-      }
-    });
-
     dom.xmlInput.addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
