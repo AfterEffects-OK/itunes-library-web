@@ -1,1778 +1,1138 @@
 <!DOCTYPE html>
-<html lang="ja" class="dark">
+<html lang="ja">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>iTunes / Apple Music ハイブリッドライブラリ検索</title>
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', '"Hiragino Sans"', '"Hiragino Kaku Gothic ProN"', '"Yu Gothic"', 'Meiryo', 'sans-serif'],
-            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace']
-          },
-          colors: {
-            apple: {
-              red: '#fa243c',
-              redHover: '#d91b31',
-              darkBg: '#111113',
-              darkCard: '#1c1c1e',
-              darkElevated: '#2c2c2e',
-              darkBorder: '#38383a'
-            }
-          }
-        }
-      }
-    };
-  </script>
-  <!-- Google Fonts: Inter -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <title>iTunes ライブラリ検索（12項目特化・最大サイズ指定JSON出力＆同期）</title>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
-    /* カスタムスクロールバー & マイクロインタラクション */
-    ::-webkit-scrollbar {
-      width: 8px;
-      height: 8px;
+    :root {
+      --bg: #0f1117;
+      --surface: #181b24;
+      --surface-2: #222634;
+      --border: #2e3447;
+      --text: #eef1f7;
+      --muted: #98a2b3;
+      --accent: #6c8cff;
+      --accent-hover: #5677f5;
+      --success: #22c55e;
     }
-    ::-webkit-scrollbar-track {
-      background: transparent;
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
     }
-    ::-webkit-scrollbar-thumb {
-      background: rgba(156, 163, 175, 0.35);
-      border-radius: 9999px;
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(15, 17, 23, 0.94);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
     }
-    ::-webkit-scrollbar-thumb:hover {
-      background: rgba(156, 163, 175, 0.55);
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; }
+    .badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--muted);
     }
-    @keyframes fadeScaleIn {
-      from { opacity: 0; transform: scale(0.97); }
-      to { opacity: 1; transform: scale(1); }
+    .badge.ok { color: var(--success); border-color: rgba(34, 197, 94, 0.4); }
+    .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    button, .btn {
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 7px 11px;
+      font-size: 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
     }
-    .animate-modal {
-      animation: fadeScaleIn 0.16s ease-out forwards;
+    button:hover, .btn:hover { background: #2a3042; border-color: #424a63; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    button.primary:hover { background: var(--accent-hover); }
+    button.chip { padding: 4px 9px; font-size: 11px; }
+
+    main { max-width: 1560px; margin: 0 auto; padding: 14px 16px; }
+
+    .dropzone {
+      border: 2px dashed var(--border);
+      background: var(--surface);
+      border-radius: 10px;
+      padding: 14px;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+    .dropzone.dragover { border-color: var(--accent); background: rgba(108, 140, 255, 0.08); }
+    .dropzone p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+
+    .progress-wrap {
+      display: none;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      font-size: 13px;
+    }
+    .progress-wrap.active { display: block; }
+    .progress-bar-bg {
+      height: 7px;
+      background: var(--surface-2);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .progress-bar-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.12s; }
+
+    .filters {
+      display: grid;
+      grid-template-columns: 2.2fr repeat(3, minmax(130px, 1fr)) auto;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    @media (max-width: 900px) {
+      .filters { grid-template-columns: 1fr 1fr; }
+    }
+    input, select {
+      width: 100%;
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--accent); }
+
+    .stats-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow-x: auto;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td {
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      white-space: nowrap;
+      max-width: 240px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    th {
+      background: var(--surface-2);
+      color: var(--muted);
+      font-weight: 600;
+      cursor: pointer;
+      user-select: none;
+    }
+    th:hover { color: var(--text); }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: rgba(108, 140, 255, 0.08); }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+    .more-wrap { text-align: center; padding: 14px; }
+
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: rgba(0, 0, 0, 0.72);
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      width: 100%;
+      max-width: 600px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+    .modal-head h2 { margin: 0; font-size: 15px; }
+    .field-grid {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 7px 12px;
+      font-size: 13px;
+    }
+    .field-label { color: var(--muted); }
+    .field-val { word-break: break-all; }
+    .form-row { margin-bottom: 12px; }
+    .form-row label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .size-input-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .size-input-row input {
+      max-width: 140px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .estimate-box {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 12px;
+      color: var(--text);
+      margin-top: 10px;
+    }
+    .modal-foot {
+      margin-top: 14px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
     }
   </style>
 </head>
-<body class="bg-zinc-100 text-zinc-900 dark:bg-apple-darkBg dark:text-zinc-100 min-h-screen flex flex-col transition-colors duration-200 antialiased">
-
-  <!-- ========================================================================
-       1. ヘッダー & ステータスバー
-       ======================================================================== -->
-  <header class="sticky top-0 z-40 bg-white/90 dark:bg-apple-darkCard/90 backdrop-blur-md border-b border-zinc-200 dark:border-apple-darkBorder px-4 sm:px-6 py-3 shadow-sm">
-    <div class="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-3">
-      <!-- ブランド & データソースバッジ -->
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-apple-red to-rose-400 flex items-center justify-center text-white shadow-md shadow-rose-500/20 shrink-0">
-          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 18V5l12-2v13"></path>
-            <circle cx="6" cy="18" r="3"></circle>
-            <circle cx="18" cy="16" r="3"></circle>
-          </svg>
-        </div>
-        <div>
-          <div class="flex items-center gap-2 flex-wrap">
-            <h1 class="text-base sm:text-lg font-bold tracking-tight">iTunes Library Search</h1>
-            <!-- 現在のデータソース状態バッジ -->
-            <span id="sourceBadge" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-200 text-zinc-700 dark:bg-apple-darkElevated dark:text-zinc-300">
-              <span id="sourceDot" class="w-2 h-2 rounded-full bg-zinc-400"></span>
-              <span id="sourceText">未読み込み</span>
-            </span>
-          </div>
-          <p id="lastSyncedText" class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-            ローカルXML・JSON または 外部サーバーから同期可能
-          </p>
-        </div>
-      </div>
-
-      <!-- アクションボタン群 -->
-      <div class="flex items-center gap-2 flex-wrap">
-        <!-- サーバー同期ボタン（URL設定時に有効化） -->
-        <button id="headerSyncBtn" type="button" class="hidden items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition cursor-pointer" title="設定済みの外部サーバーから最新データを取得">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="23 4 23 10 17 10"></polyline>
-            <polyline points="1 20 1 14 7 14"></polyline>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-          </svg>
-          <span class="hidden sm:inline">サーバー同期</span>
-        </button>
-
-        <!-- サーバー設定モーダルを開く -->
-        <button id="openServerSettingsBtn" type="button" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-white dark:bg-apple-darkElevated border border-zinc-300 dark:border-apple-darkBorder hover:bg-zinc-50 dark:hover:bg-zinc-700 transition cursor-pointer" title="外部サーバーURL・同期・アップロード設定">
-          <svg class="w-4 h-4 text-sky-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
-            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
-            <line x1="6" y1="6" x2="6.01" y2="6"></line>
-            <line x1="6" y1="18" x2="6.01" y2="18"></line>
-          </svg>
-          <span>サーバー連携</span>
-        </button>
-
-        <!-- ローカルファイル読み込み -->
-        <button id="headerLoadLocalBtn" type="button" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-white dark:bg-apple-darkElevated border border-zinc-300 dark:border-apple-darkBorder hover:bg-zinc-50 dark:hover:bg-zinc-700 transition cursor-pointer" title="PC内の Library.xml / JSON を読み込む">
-          <svg class="w-4 h-4 text-apple-red" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="17 8 12 3 7 8"></polyline>
-            <line x1="12" y1="3" x2="12" y2="15"></line>
-          </svg>
-          <span>ファイル読込</span>
-        </button>
-
-        <!-- JSON書き出し -->
-        <button id="exportJsonBtn" type="button" class="hidden items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-white dark:bg-apple-darkElevated border border-zinc-300 dark:border-apple-darkBorder hover:bg-zinc-50 dark:hover:bg-zinc-700 transition cursor-pointer" title="サーバー配置用の軽量 library.json を書き出し">
-          <svg class="w-4 h-4 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-          <span class="hidden md:inline">JSON出力</span>
-        </button>
-
-        <!-- テーマ切替 -->
-        <button id="themeToggleBtn" type="button" class="p-2 rounded-xl bg-white dark:bg-apple-darkElevated border border-zinc-300 dark:border-apple-darkBorder hover:bg-zinc-50 dark:hover:bg-zinc-700 transition cursor-pointer" aria-label="テーマ切替" title="ダーク/ライトモード切替">
-          <svg id="themeIconSun" class="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="5"></circle>
-            <line x1="12" y1="1" x2="12" y2="3"></line>
-            <line x1="12" y1="21" x2="12" y2="23"></line>
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-            <line x1="1" y1="12" x2="3" y2="12"></line>
-            <line x1="21" y1="12" x2="23" y2="12"></line>
-            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-          </svg>
-          <svg id="themeIconMoon" class="w-4 h-4 text-zinc-700 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-          </svg>
-        </button>
-      </div>
+<body>
+  <header>
+    <div class="brand">
+      <span>iTunes ライブラリ検索</span>
+      <span id="dbStatus" class="badge">読込中...</span>
+    </div>
+    <div class="actions">
+      <label class="btn" for="xmlInput">XML / JSON 読込</label>
+      <input type="file" id="xmlInput" accept=".xml,.json,text/xml,application/json" hidden />
+      <button id="openExportBtn">JSON出力</button>
+      <button id="openSyncBtn">サーバー同期設定</button>
+      <button id="syncNowBtn" class="primary">今すぐ同期</button>
+      <button id="clearDbBtn">DB消去</button>
     </div>
   </header>
 
-  <!-- 隠しファイル入力 -->
-  <input type="file" id="fileInput" accept=".xml,.json,text/xml,application/json" class="hidden" />
+  <main>
+    <div id="dropzone" class="dropzone">
+      <strong>Library.xml（350MB超対応）または 出力済み JSON をドラッグ＆ドロップ</strong>
+      <p>抽出対象：曲名・アルバム名・曲番号・アルバム番号・アーティスト名・備考・再生時間・ビットレート・リリース年・追加日・ジャンル・ファイルサイズ（12項目のみ）</p>
+    </div>
 
-  <!-- ========================================================================
-       2. メインコンテンツ領域
-       ======================================================================== -->
-  <main class="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-6">
+    <div id="progressWrap" class="progress-wrap">
+      <div id="progressText">処理中...</div>
+      <div class="progress-bar-bg"><div id="progressFill" class="progress-bar-fill"></div></div>
+    </div>
 
-    <!-- A. 初期ウェルカム画面（データ未読み込み時） -->
-    <section id="welcomeView" class="max-w-3xl mx-auto my-6 space-y-6">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <!-- ローカル読み込みカード -->
-        <div id="dropZone" role="button" tabindex="0" class="group bg-white dark:bg-apple-darkCard border-2 border-dashed border-zinc-300 dark:border-apple-darkBorder hover:border-apple-red dark:hover:border-apple-red rounded-2xl p-8 text-center cursor-pointer transition shadow-sm flex flex-col items-center justify-center">
-          <div class="w-14 h-14 rounded-2xl bg-rose-500/10 text-apple-red flex items-center justify-center mb-4 group-hover:scale-105 transition-transform">
-            <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="17 8 12 3 7 8"></polyline>
-              <line x1="12" y1="3" x2="12" y2="15"></line>
-            </svg>
-          </div>
-          <h2 class="text-lg font-bold mb-1">ローカルファイルから読込</h2>
-          <p class="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mb-5">
-            <code class="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-apple-darkElevated font-mono text-xs">Library.xml</code> または <code class="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-apple-darkElevated font-mono text-xs">.json</code> をドロップ
-          </p>
-          <span class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-apple-red hover:bg-apple-redHover text-white text-sm font-semibold shadow-sm transition">
-            PCからファイルを選択
-          </span>
-        </div>
+    <div class="filters">
+      <input type="search" id="searchInput" placeholder="曲名・アルバム名・アーティスト名・備考で検索（スペースでAND）" />
+      <select id="genreFilter"><option value="">全ジャンル</option></select>
+      <select id="yearFilter"><option value="">全リリース年</option></select>
+      <select id="sortSelect">
+        <option value="name-asc">曲名 (昇順)</option>
+        <option value="artist-asc">アーティスト名 (昇順)</option>
+        <option value="album-asc">アルバム名 (昇順)</option>
+        <option value="trackNo-asc">曲番号 (昇順)</option>
+        <option value="year-desc">リリース年 (新しい順)</option>
+        <option value="dateAdded-desc">追加日 (新しい順)</option>
+        <option value="bitrate-desc">ビットレート (高い順)</option>
+        <option value="size-desc">ファイルサイズ (大きい順)</option>
+      </select>
+      <button id="resetFiltersBtn">クリア</button>
+    </div>
 
-        <!-- 外部サーバー同期カード -->
-        <div id="welcomeServerCard" role="button" tabindex="0" class="group bg-white dark:bg-apple-darkCard border border-zinc-200 dark:border-apple-darkBorder hover:border-sky-500 dark:hover:border-sky-500 rounded-2xl p-8 text-center cursor-pointer transition shadow-sm flex flex-col items-center justify-center">
-          <div class="w-14 h-14 rounded-2xl bg-sky-500/10 text-sky-500 flex items-center justify-center mb-4 group-hover:scale-105 transition-transform">
-            <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
-            </svg>
-          </div>
-          <h2 class="text-lg font-bold mb-1">外部サーバーから取得・同期</h2>
-          <p class="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mb-5">
-            Webサーバー・GitHub Pages・NAS・GAS等に配置したXML/JSONから同期
-          </p>
-          <span class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold shadow-sm transition">
-            サーバーURLを設定して同期
-          </span>
-        </div>
-      </div>
+    <div class="stats-bar">
+      <div id="resultCount">表示: 0 / 総曲数: 0</div>
+      <div id="syncMeta">未同期</div>
+    </div>
 
-      <!-- 使い方ガイド -->
-      <div class="bg-white dark:bg-apple-darkCard border border-zinc-200 dark:border-apple-darkBorder rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
-        <h3 class="text-sm font-bold flex items-center gap-2">
-          <svg class="w-4 h-4 text-apple-red" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="16" x2="12" y2="12"></line>
-            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-          </svg>
-          ハイブリッド動作の仕組み（ローカル完結 ＋ 外部サーバー連携）
-        </h3>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs sm:text-sm text-zinc-600 dark:text-zinc-400">
-          <div class="p-3.5 rounded-xl bg-zinc-50 dark:bg-apple-darkElevated/60 border border-zinc-200/70 dark:border-apple-darkBorder">
-            <div class="font-semibold text-zinc-900 dark:text-zinc-100 mb-1">1. ローカル＆キャッシュ動作</div>
-            <p>読み込んだライブラリはブラウザの <strong>IndexedDB</strong> に自動保存されます。次回からはネット接続なしでも瞬時に検索できます。</p>
-          </div>
-          <div class="p-3.5 rounded-xl bg-zinc-50 dark:bg-apple-darkElevated/60 border border-zinc-200/70 dark:border-apple-darkBorder">
-            <div class="font-semibold text-zinc-900 dark:text-zinc-100 mb-1">2. 外部サーバー同期 &amp; API連携</div>
-            <p>サーバー上の <code class="font-mono text-xs">Library.xml</code> や <code class="font-mono text-xs">library.json</code> をURL指定で取得できるほか、GASや独自APIへのデータ送信（Push）、iTunes Store APIによる試聴・ジャケ写取得にも対応しています。</p>
-          </div>
-        </div>
-      </div>
-    </section>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th data-sort="name">曲名</th>
+            <th data-sort="album">アルバム名</th>
+            <th data-sort="trackNo" class="num">曲番</th>
+            <th data-sort="discNo" class="num">盤番</th>
+            <th data-sort="artist">アーティスト名</th>
+            <th data-sort="comments">備考</th>
+            <th data-sort="duration" class="num">再生時間</th>
+            <th data-sort="bitrate" class="num">ビットレート</th>
+            <th data-sort="year" class="num">リリース年</th>
+            <th data-sort="dateAdded">追加日</th>
+            <th data-sort="genre">ジャンル</th>
+            <th data-sort="size" class="num">サイズ</th>
+          </tr>
+        </thead>
+        <tbody id="trackTbody"></tbody>
+      </table>
+    </div>
 
-    <!-- B. ライブラリ検索ダッシュボード -->
-    <section id="libraryView" class="hidden space-y-4">
-      <!-- 統計サマリーカード -->
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div class="bg-white dark:bg-apple-darkCard border border-zinc-200 dark:border-apple-darkBorder rounded-2xl p-4 shadow-sm">
-          <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">総楽曲数</div>
-          <div id="statTotalTracks" class="text-xl sm:text-2xl font-bold mt-1 tabular-nums">0 曲</div>
-        </div>
-        <div class="bg-white dark:bg-apple-darkCard border border-zinc-200 dark:border-apple-darkBorder rounded-2xl p-4 shadow-sm">
-          <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">アーティスト数</div>
-          <div id="statTotalArtists" class="text-xl sm:text-2xl font-bold mt-1 tabular-nums">0</div>
-        </div>
-        <div class="bg-white dark:bg-apple-darkCard border border-zinc-200 dark:border-apple-darkBorder rounded-2xl p-4 shadow-sm">
-          <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">アルバム数</div>
-          <div id="statTotalAlbums" class="text-xl sm:text-2xl font-bold mt-1 tabular-nums">0</div>
-        </div>
-        <div class="bg-white dark:bg-apple-darkCard border border-zinc-200 dark:border-apple-darkBorder rounded-2xl p-4 shadow-sm">
-          <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">総再生時間</div>
-          <div id="statTotalTime" class="text-xl sm:text-2xl font-bold mt-1 tabular-nums">0時間</div>
-        </div>
-      </div>
-
-      <!-- 検索バー & フィルター群 -->
-      <div class="bg-white dark:bg-apple-darkCard border border-zinc-200 dark:border-apple-darkBorder rounded-2xl p-4 shadow-sm space-y-3">
-        <!-- 検索インプット -->
-        <div class="relative flex items-center">
-          <svg class="w-5 h-5 text-zinc-400 absolute left-3.5 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
-          <input
-            type="text"
-            id="searchInput"
-            placeholder="曲名、アーティスト、アルバム、ジャンル、作曲者、コメントで検索（スペース区切りでAND検索）..."
-            autocomplete="off"
-            class="w-full pl-11 pr-10 py-2.5 rounded-xl bg-zinc-100 dark:bg-apple-darkBg border border-zinc-300 dark:border-apple-darkBorder focus:border-apple-red dark:focus:border-apple-red outline-none text-sm transition"
-          />
-          <button type="button" id="clearSearchBtn" class="hidden absolute right-3 p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 cursor-pointer" title="検索クリア">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-
-        <!-- ドロップダウンフィルター -->
-        <div class="flex flex-wrap items-center gap-2.5">
-          <!-- プレイリストフィルター -->
-          <select id="playlistFilter" aria-label="プレイリスト絞り込み" class="px-3 py-2 rounded-xl text-xs sm:text-sm bg-zinc-100 dark:bg-apple-darkBg border border-zinc-300 dark:border-apple-darkBorder outline-none focus:border-apple-red max-w-[210px] cursor-pointer">
-            <option value="">すべてのプレイリスト</option>
-          </select>
-
-          <!-- ジャンルフィルター -->
-          <select id="genreFilter" aria-label="ジャンル絞り込み" class="px-3 py-2 rounded-xl text-xs sm:text-sm bg-zinc-100 dark:bg-apple-darkBg border border-zinc-300 dark:border-apple-darkBorder outline-none focus:border-apple-red max-w-[190px] cursor-pointer">
-            <option value="">すべてのジャンル</option>
-          </select>
-
-          <!-- 年代フィルター -->
-          <select id="yearFilter" aria-label="リリース年絞り込み" class="px-3 py-2 rounded-xl text-xs sm:text-sm bg-zinc-100 dark:bg-apple-darkBg border border-zinc-300 dark:border-apple-darkBorder outline-none focus:border-apple-red max-w-[160px] cursor-pointer">
-            <option value="">すべての年代</option>
-          </select>
-
-          <!-- レートフィルター -->
-          <select id="ratingFilter" aria-label="レート絞り込み" class="px-3 py-2 rounded-xl text-xs sm:text-sm bg-zinc-100 dark:bg-apple-darkBg border border-zinc-300 dark:border-apple-darkBorder outline-none focus:border-apple-red max-w-[170px] cursor-pointer">
-            <option value="0">すべてのレート</option>
-            <option value="100">★★★★★ (5つ星)</option>
-            <option value="80">★★★★☆ 以上 (4つ星〜)</option>
-            <option value="60">★★★☆☆ 以上 (3つ星〜)</option>
-            <option value="40">★★☆☆☆ 以上 (2つ星〜)</option>
-            <option value="20">★☆☆☆☆ 以上 (1つ星〜)</option>
-          </select>
-
-          <button type="button" id="resetFiltersBtn" class="px-3 py-2 rounded-xl text-xs font-semibold bg-zinc-200/70 dark:bg-apple-darkElevated hover:bg-zinc-300 dark:hover:bg-zinc-700 transition cursor-pointer">
-            リセット
-          </button>
-
-          <div id="resultSummary" class="ml-auto text-xs sm:text-sm font-medium text-zinc-500 dark:text-zinc-400 tabular-nums">
-            0 件表示
-          </div>
-        </div>
-      </div>
-
-      <!-- 楽曲一覧テーブル -->
-      <div class="bg-white dark:bg-apple-darkCard border border-zinc-200 dark:border-apple-darkBorder rounded-2xl overflow-hidden shadow-sm">
-        <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse text-sm">
-            <thead class="bg-zinc-100 dark:bg-apple-darkElevated border-b border-zinc-200 dark:border-apple-darkBorder text-xs uppercase text-zinc-500 dark:text-zinc-400 select-none">
-              <tr>
-                <th data-sort="name" class="py-3 px-4 font-semibold cursor-pointer hover:text-zinc-900 dark:hover:text-white whitespace-nowrap">
-                  曲名 <span class="sort-indicator text-apple-red ml-1"></span>
-                </th>
-                <th data-sort="artist" class="py-3 px-4 font-semibold cursor-pointer hover:text-zinc-900 dark:hover:text-white whitespace-nowrap">
-                  アーティスト <span class="sort-indicator text-apple-red ml-1"></span>
-                </th>
-                <th data-sort="album" class="py-3 px-4 font-semibold cursor-pointer hover:text-zinc-900 dark:hover:text-white whitespace-nowrap hidden md:table-cell">
-                  アルバム <span class="sort-indicator text-apple-red ml-1"></span>
-                </th>
-                <th data-sort="genre" class="py-3 px-4 font-semibold cursor-pointer hover:text-zinc-900 dark:hover:text-white whitespace-nowrap hidden lg:table-cell">
-                  ジャンル <span class="sort-indicator text-apple-red ml-1"></span>
-                </th>
-                <th data-sort="year" class="py-3 px-4 font-semibold cursor-pointer hover:text-zinc-900 dark:hover:text-white whitespace-nowrap text-right hidden sm:table-cell">
-                  年 <span class="sort-indicator text-apple-red ml-1"></span>
-                </th>
-                <th data-sort="timeMs" class="py-3 px-4 font-semibold cursor-pointer hover:text-zinc-900 dark:hover:text-white whitespace-nowrap text-right">
-                  時間 <span class="sort-indicator text-apple-red ml-1"></span>
-                </th>
-                <th data-sort="rating" class="py-3 px-4 font-semibold cursor-pointer hover:text-zinc-900 dark:hover:text-white whitespace-nowrap hidden xl:table-cell">
-                  レート <span class="sort-indicator text-apple-red ml-1"></span>
-                </th>
-                <th data-sort="playCount" class="py-3 px-4 font-semibold cursor-pointer hover:text-zinc-900 dark:hover:text-white whitespace-nowrap text-right hidden lg:table-cell">
-                  再生数 <span class="sort-indicator text-apple-red ml-1"></span>
-                </th>
-                <th data-sort="dateAddedTs" class="py-3 px-4 font-semibold cursor-pointer hover:text-zinc-900 dark:hover:text-white whitespace-nowrap text-right hidden xl:table-cell">
-                  追加日 <span class="sort-indicator text-apple-red ml-1"></span>
-                </th>
-              </tr>
-            </thead>
-            <tbody id="tracksTableBody" class="divide-y divide-zinc-200 dark:divide-apple-darkBorder">
-              <!-- JSで高速描画 -->
-            </tbody>
-          </table>
-        </div>
-
-        <!-- ページネーションバー -->
-        <div class="px-4 py-3 bg-zinc-50 dark:bg-apple-darkElevated/40 border-t border-zinc-200 dark:border-apple-darkBorder flex flex-wrap items-center justify-between gap-3">
-          <div id="pageInfoText" class="text-xs text-zinc-500 dark:text-zinc-400 tabular-nums">
-            1 - 100 件を表示中
-          </div>
-          <div class="flex items-center gap-2">
-            <button type="button" id="prevPageBtn" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-apple-darkElevated border border-zinc-300 dark:border-apple-darkBorder disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed">
-              前へ
-            </button>
-            <span id="pageNumberDisplay" class="text-xs font-bold px-2 tabular-nums">1 / 1</span>
-            <button type="button" id="nextPageBtn" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-apple-darkElevated border border-zinc-300 dark:border-apple-darkBorder disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed">
-              次へ
-            </button>
-          </div>
-        </div>
-      </div>
-    </section>
+    <div class="more-wrap">
+      <button id="loadMoreBtn" style="display:none;">さらに表示（+200件）</button>
+    </div>
   </main>
 
-  <!-- ========================================================================
-       3. ローディングオーバーレイ
-       ======================================================================== -->
-  <div id="loadingOverlay" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-white dark:bg-apple-darkCard border border-zinc-200 dark:border-apple-darkBorder rounded-2xl p-7 max-w-sm w-full text-center shadow-2xl">
-      <div class="w-10 h-10 border-4 border-zinc-200 dark:border-zinc-700 border-t-apple-red rounded-full animate-spin mx-auto mb-4"></div>
-      <h3 id="loadingTitle" class="text-base font-bold mb-1">処理中...</h3>
-      <p id="loadingDesc" class="text-xs text-zinc-500 dark:text-zinc-400">しばらくお待ちください</p>
-    </div>
-  </div>
-
-  <!-- ========================================================================
-       4. 外部サーバー連携・同期設定モーダル
-       ======================================================================== -->
-  <div id="serverModal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true">
-    <div class="animate-modal bg-white dark:bg-apple-darkCard border border-zinc-200 dark:border-apple-darkBorder rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
-      <!-- モーダルヘッダー -->
-      <div class="px-6 py-4 border-b border-zinc-200 dark:border-apple-darkBorder flex items-center justify-between">
-        <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-lg bg-sky-500/10 text-sky-500 flex items-center justify-center">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
-              <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
-              <line x1="6" y1="6" x2="6.01" y2="6"></line>
-              <line x1="6" y1="18" x2="6.01" y2="18"></line>
-            </svg>
-          </div>
-          <div>
-            <h3 class="text-base font-bold">外部サーバー連携 &amp; 同期設定</h3>
-            <p class="text-xs text-zinc-500 dark:text-zinc-400">リモートXML/JSONの取得（Pull）とAPIへの送信（Push）</p>
-          </div>
-        </div>
-        <button type="button" id="closeServerModalBtn" class="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-apple-darkElevated cursor-pointer">
-          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
+  <!-- 楽曲詳細モーダル -->
+  <div id="detailModal" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 id="detailTitle">楽曲詳細</h2>
+        <button data-close="detailModal">閉じる</button>
       </div>
-
-      <!-- モーダルボディ -->
-      <div class="p-6 space-y-6 text-sm">
-        <!-- セクション1: サーバーから取得 (GET / Pull) -->
-        <div class="space-y-3">
-          <h4 class="text-xs font-bold uppercase tracking-wider text-sky-500">1. サーバーからデータ取得 (Fetch / Sync)</h4>
-          <div>
-            <label for="remoteFetchUrl" class="block text-xs font-semibold mb-1.5">リモートライブラリ URL（XML または JSON / APIエンドポイント）</label>
-            <input
-              type="url"
-              id="remoteFetchUrl"
-              placeholder="https://example.com/library.json または https://.../Library.xml"
-              class="w-full px-3.5 py-2.5 rounded-xl bg-zinc-100 dark:bg-apple-darkBg border border-zinc-300 dark:border-apple-darkBorder focus:border-sky-500 outline-none font-mono text-xs"
-            />
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label for="remoteAuthToken" class="block text-xs font-semibold mb-1.5">認証トークン / APIキー（任意・Bearerヘッダー）</label>
-              <input
-                type="password"
-                id="remoteAuthToken"
-                placeholder="例: your-secret-api-token"
-                class="w-full px-3.5 py-2 rounded-xl bg-zinc-100 dark:bg-apple-darkBg border border-zinc-300 dark:border-apple-darkBorder focus:border-sky-500 outline-none font-mono text-xs"
-              />
-            </div>
-            <div class="flex items-end pb-1.5">
-              <label class="inline-flex items-center gap-2.5 cursor-pointer select-none">
-                <input type="checkbox" id="autoSyncStartupCheck" class="w-4 h-4 rounded accent-sky-500" />
-                <span class="text-xs font-medium">ページ起動時に自動でサーバーと同期する</span>
-              </label>
-            </div>
-          </div>
-
-          <div class="flex flex-wrap items-center gap-2 pt-1">
-            <button type="button" id="syncNowBtn" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer">
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="23 4 23 10 17 10"></polyline>
-                <polyline points="1 20 1 14 7 14"></polyline>
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-              </svg>
-              今すぐサーバーから同期（Fetch）
-            </button>
-            <span id="serverFetchStatus" class="text-xs text-zinc-500 dark:text-zinc-400"></span>
-          </div>
-        </div>
-
-        <hr class="border-zinc-200 dark:border-apple-darkBorder" />
-
-        <!-- セクション2: サーバーへアップロード (POST / Push) -->
-        <div class="space-y-3">
-          <h4 class="text-xs font-bold uppercase tracking-wider text-emerald-500">2. サーバーへライブラリを送信 (Push / Upload)</h4>
-          <p class="text-xs text-zinc-500 dark:text-zinc-400">
-            ローカルで読み込んだ <code class="font-mono">Library.xml</code> の解析済みJSONデータを、独自APIや Google Apps Script (GAS) のWebアプリURLへPOST送信してクラウドを更新できます。
-          </p>
-          <div>
-            <label for="remotePushUrl" class="block text-xs font-semibold mb-1.5">送信先エンドポイント URL（POST先・空欄の場合は上の取得URLを使用）</label>
-            <input
-              type="url"
-              id="remotePushUrl"
-              placeholder="https://script.google.com/macros/s/.../exec または https://api.example.com/library"
-              class="w-full px-3.5 py-2.5 rounded-xl bg-zinc-100 dark:bg-apple-darkBg border border-zinc-300 dark:border-apple-darkBorder focus:border-emerald-500 outline-none font-mono text-xs"
-            />
-          </div>
-          <div class="flex flex-wrap items-center gap-2 pt-1">
-            <button type="button" id="pushNowBtn" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-sm transition cursor-pointer">
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="22" y1="2" x2="11" y2="13"></line>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-              </svg>
-              現在のライブラリをサーバーへ送信（POST）
-            </button>
-          </div>
-        </div>
-
-        <!-- セクション3: 運用ガイド & データ管理 -->
-        <details class="bg-zinc-50 dark:bg-apple-darkElevated/50 border border-zinc-200 dark:border-apple-darkBorder rounded-xl p-3.5">
-          <summary class="text-xs font-bold cursor-pointer select-none">
-            サーバー構築・ホスティングのヒント（GitHub Pages / NAS / GAS）
-          </summary>
-          <ul class="mt-2.5 space-y-1.5 text-xs text-zinc-600 dark:text-zinc-400 list-disc pl-4">
-            <li><strong>GitHub Pages / 静的Webサーバー:</strong> 本アプリの「JSON出力」ボタンで書き出した <code class="font-mono">library.json</code> をサーバーに配置し、そのURLを上の「リモートライブラリ URL」に設定するとスマホや他PCからも高速に同期できます。</li>
-            <li><strong>Synology / QNAP NAS:</strong> Web Station等で <code class="font-mono">Library.xml</code> を公開フォルダに配置すれば、そのまま直接XMLのURLを指定して同期可能です（※CORS許可ヘッダーが必要な場合があります）。</li>
-            <li><strong>Google Apps Script (GAS):</strong> <code class="font-mono">doGet(e)</code> でJSONを返し、<code class="font-mono">doPost(e)</code> でGoogleドライブ上のJSONファイルを上書き保存するスクリプトを組むと、完全無料のクラウド同期サーバーになります。</li>
-          </ul>
-        </details>
-
-        <!-- ローカルキャッシュ削除 -->
-        <div class="pt-2 flex items-center justify-between border-t border-zinc-200 dark:border-apple-darkBorder">
-          <button type="button" id="openConfirmClearBtn" class="text-xs font-semibold text-rose-500 hover:text-rose-400 cursor-pointer">
-            ブラウザ内のキャッシュデータを削除...
-          </button>
-          <div class="flex items-center gap-2">
-            <button type="button" id="saveServerSettingsBtn" class="px-4 py-2 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-xs font-bold cursor-pointer">
-              設定を保存
-            </button>
-          </div>
-        </div>
+      <div id="detailBody" class="field-grid"></div>
+      <div class="modal-foot">
+        <button data-close="detailModal">閉じる</button>
       </div>
     </div>
   </div>
 
-  <!-- ========================================================================
-       5. 楽曲詳細モーダル（iTunes Store API アートワーク & 30秒試聴対応）
-       ======================================================================== -->
-  <div id="detailModal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true">
-    <div class="animate-modal bg-white dark:bg-apple-darkCard border border-zinc-200 dark:border-apple-darkBorder rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-      <!-- ヘッダー（アートワーク＋曲タイトル） -->
-      <div class="p-5 sm:p-6 border-b border-zinc-200 dark:border-apple-darkBorder flex items-start gap-4">
-        <!-- アートワーク表示枠 -->
-        <div id="artworkWrapper" class="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-zinc-100 dark:bg-apple-darkElevated border border-zinc-200 dark:border-apple-darkBorder flex items-center justify-center shrink-0 overflow-hidden relative">
-          <svg id="artworkPlaceholderIcon" class="w-8 h-8 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <path d="M9 18V5l12-2v13"></path>
-            <circle cx="6" cy="18" r="3"></circle>
-            <circle cx="18" cy="16" r="3"></circle>
-          </svg>
-          <img id="modalArtworkImg" src="" alt="Album Artwork" class="hidden w-full h-full object-cover" />
-        </div>
-
-        <div class="flex-1 min-w-0">
-          <div class="flex items-start justify-between gap-2">
-            <h3 id="modalTrackName" class="text-base sm:text-lg font-bold leading-snug break-words">曲名</h3>
-            <button type="button" id="closeModalBtn" class="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-apple-darkElevated shrink-0 cursor-pointer" aria-label="閉じる">
-              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
-          </div>
-          <p id="modalTrackArtist" class="text-sm text-zinc-600 dark:text-zinc-300 font-medium mt-0.5 truncate">アーティスト名</p>
-          <p id="modalTrackAlbum" class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">アルバム名</p>
-
-          <!-- iTunes Store API オンライン検索＆試聴バー -->
-          <div class="mt-3 flex flex-wrap items-center gap-2">
-            <button type="button" id="fetchItunesPreviewBtn" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-apple-red/10 text-apple-red hover:bg-apple-red hover:text-white text-xs font-semibold transition cursor-pointer">
-              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="5 3 19 12 5 21 5 3"></polygon>
-              </svg>
-              <span>iTunes Storeでジャケ写・試聴を取得</span>
-            </button>
-            <span id="previewStatusText" class="text-xs text-zinc-500 dark:text-zinc-400"></span>
-          </div>
-        </div>
+  <!-- JSON出力モーダル -->
+  <div id="exportModal" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>JSON出力（最大ファイルサイズ指定・12項目抽出）</h2>
+        <button data-close="exportModal">閉じる</button>
       </div>
-
-      <!-- 30秒試聴オーディオプレイヤー（取得成功時に表示） -->
-      <div id="audioPreviewContainer" class="hidden px-6 py-3 bg-zinc-50 dark:bg-apple-darkElevated/60 border-b border-zinc-200 dark:border-apple-darkBorder">
-        <div class="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400 mb-1.5">
-          <span>Apple Music / iTunes 30秒プレビュー試聴</span>
-          <a id="appleMusicStoreLink" href="#" target="_blank" rel="noopener noreferrer" class="text-apple-red hover:underline font-medium">
-            Apple Musicで見る ↗
-          </a>
-        </div>
-        <audio id="previewAudioPlayer" controls class="w-full h-9 rounded-lg"></audio>
-      </div>
-
-      <!-- メタデータ詳細グリッド -->
-      <div class="p-5 sm:p-6 space-y-4">
-        <div id="modalMetaGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-          <!-- JSで生成 -->
-        </div>
-
-        <div>
-          <div class="text-[11px] font-bold uppercase text-zinc-400 mb-1">ローカルファイルパス (Location)</div>
-          <div id="modalFilePath" class="font-mono text-xs bg-zinc-100 dark:bg-apple-darkBg border border-zinc-200 dark:border-apple-darkBorder rounded-xl p-3 text-zinc-600 dark:text-zinc-300 break-all">
-            -
-          </div>
-        </div>
-      </div>
-
-      <!-- フッター -->
-      <div class="px-6 py-3.5 border-t border-zinc-200 dark:border-apple-darkBorder flex items-center justify-end gap-2.5">
-        <button type="button" id="copyTrackInfoBtn" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-zinc-100 dark:bg-apple-darkElevated hover:bg-zinc-200 dark:hover:bg-zinc-700 transition cursor-pointer">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-          </svg>
-          曲情報をコピー
-        </button>
-        <button type="button" id="closeModalFooterBtn" class="px-4 py-2 rounded-xl text-xs font-semibold bg-apple-red hover:bg-apple-redHover text-white transition cursor-pointer">
-          閉じる
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ========================================================================
-       6. キャッシュ削除確認モーダル（confirm()代替）
-       ======================================================================== -->
-  <div id="confirmModal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true">
-    <div class="animate-modal bg-white dark:bg-apple-darkCard border border-zinc-200 dark:border-apple-darkBorder rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
-      <h3 class="text-base font-bold">ローカルキャッシュの削除確認</h3>
-      <p class="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-        ブラウザ内（IndexedDB）に保存されている楽曲キャッシュを削除しますか？<br />
-        <span class="text-xs text-zinc-400">※元のXMLファイルや外部サーバー上のデータは削除されません。</span>
+      <p style="font-size:12px;color:var(--muted);margin-top:0;">
+        対象12項目のみを短縮キーで出力します。指定した<strong>最大ファイルサイズ</strong>を超えないように自動で分割（<code>manifest.json</code> ＋ <code>part-001.json</code> ...）されます。
       </p>
-      <div class="flex justify-end gap-2 pt-2">
-        <button type="button" id="cancelClearBtn" class="px-4 py-2 rounded-xl text-xs font-semibold bg-zinc-100 dark:bg-apple-darkElevated hover:bg-zinc-200 dark:hover:bg-zinc-700 cursor-pointer">
-          キャンセル
-        </button>
-        <button type="button" id="confirmClearBtn" class="px-4 py-2 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white cursor-pointer">
-          削除する
-        </button>
+      <div class="form-row">
+        <label for="maxFileSizeMb">1ファイルあたりの最大ファイルサイズ（MB）</label>
+        <div class="size-input-row">
+          <input type="number" id="maxFileSizeMb" min="1" max="2000" step="1" value="45" />
+          <span>MB</span>
+          <button type="button" class="chip" data-preset-mb="20">20 MB</button>
+          <button type="button" class="chip" data-preset-mb="45">45 MB</button>
+          <button type="button" class="chip" data-preset-mb="90">90 MB (GitHub上限対策)</button>
+        </div>
+      </div>
+      <div id="exportEstimateBox" class="estimate-box">計算中...</div>
+      <div class="modal-foot">
+        <button id="exportFolderBtn" class="primary">フォルダへ直接書き出し</button>
+        <button id="exportZipBtn">ZIPで一括ダウンロード</button>
+        <button id="exportEachBtn">個別ダウンロード</button>
       </div>
     </div>
   </div>
 
-  <!-- トースト通知 -->
-  <div id="toast" class="fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-xs sm:text-sm font-semibold shadow-xl opacity-0 translate-y-2 pointer-events-none transition-all duration-200">
-    通知メッセージ
+  <!-- サーバー同期設定モーダル -->
+  <div id="syncModal" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>サーバー同期設定（単一JSON / 分割manifest.json 両対応）</h2>
+        <button data-close="syncModal">閉じる</button>
+      </div>
+      <div class="form-row">
+        <label for="syncUrlInput">JSONファイル URL（manifest.json または library.json）</label>
+        <input type="url" id="syncUrlInput" placeholder="https://example.com/manifest.json または ./manifest.json" />
+      </div>
+      <div class="form-row">
+        <label for="bearerTokenInput">Authorization Bearer トークン（任意）</label>
+        <input type="text" id="bearerTokenInput" placeholder="必要な場合のみ入力" />
+      </div>
+      <div class="form-row">
+        <label><input type="checkbox" id="autoSyncCheckbox" style="width:auto;" /> ページ起動時に自動でサーバー同期する</label>
+      </div>
+      <div class="modal-foot">
+        <button id="saveSyncBtn" class="primary">保存して同期</button>
+        <button data-close="syncModal">キャンセル</button>
+      </div>
+    </div>
   </div>
 
-  <!-- ========================================================================
-       7. JavaScript アプリケーションロジック
-       ======================================================================== -->
   <script>
-    (function () {
-      'use strict';
+    // --- IndexedDB 管理 ---
+    const DB_NAME = 'iTunesLibrary12FieldsDB';
+    const DB_VERSION = 1;
+    const STORE_TRACKS = 'tracks';
+    const STORE_META = 'meta';
 
-      // ----------------------------------------------------------------------
-      // アプリケーション状態 (State)
-      // ----------------------------------------------------------------------
-      let allTracks = [];
-      let allPlaylists = []; // { id, name, trackIds: Set<number> }
-      let filteredTracks = [];
-      let currentPage = 1;
-      const PAGE_SIZE = 100;
-      let sortConfig = { key: 'artist', direction: 'asc' };
-      let currentModalTrack = null;
+    function openDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE_TRACKS)) {
+            db.createObjectStore(STORE_TRACKS, { keyPath: 'id' });
+          }
+          if (!db.objectStoreNames.contains(STORE_META)) {
+            db.createObjectStore(STORE_META, { keyPath: 'key' });
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
 
-      // サーバー連携設定 (localStorageで管理)
-      const SETTINGS_KEY = 'itunes_hybrid_server_settings_v1';
-      let serverSettings = {
-        fetchUrl: '',
-        pushUrl: '',
-        authToken: '',
-        autoSync: false
-      };
-
-      // IndexedDB 設定
-      const DB_NAME = 'iTunesHybridLibraryDB';
-      const DB_VERSION = 1;
-      const STORE_NAME = 'libraryStore';
-      const DATA_KEY = 'libraryPayload';
-
-      // ----------------------------------------------------------------------
-      // DOM要素キャッシュ
-      // ----------------------------------------------------------------------
-      const els = {
-        sourceBadge: document.getElementById('sourceBadge'),
-        sourceDot: document.getElementById('sourceDot'),
-        sourceText: document.getElementById('sourceText'),
-        lastSyncedText: document.getElementById('lastSyncedText'),
-        headerSyncBtn: document.getElementById('headerSyncBtn'),
-        openServerSettingsBtn: document.getElementById('openServerSettingsBtn'),
-        headerLoadLocalBtn: document.getElementById('headerLoadLocalBtn'),
-        exportJsonBtn: document.getElementById('exportJsonBtn'),
-        themeToggleBtn: document.getElementById('themeToggleBtn'),
-        themeIconSun: document.getElementById('themeIconSun'),
-        themeIconMoon: document.getElementById('themeIconMoon'),
-        fileInput: document.getElementById('fileInput'),
-        welcomeView: document.getElementById('welcomeView'),
-        dropZone: document.getElementById('dropZone'),
-        welcomeServerCard: document.getElementById('welcomeServerCard'),
-        libraryView: document.getElementById('libraryView'),
-        statTotalTracks: document.getElementById('statTotalTracks'),
-        statTotalArtists: document.getElementById('statTotalArtists'),
-        statTotalAlbums: document.getElementById('statTotalAlbums'),
-        statTotalTime: document.getElementById('statTotalTime'),
-        searchInput: document.getElementById('searchInput'),
-        clearSearchBtn: document.getElementById('clearSearchBtn'),
-        playlistFilter: document.getElementById('playlistFilter'),
-        genreFilter: document.getElementById('genreFilter'),
-        yearFilter: document.getElementById('yearFilter'),
-        ratingFilter: document.getElementById('ratingFilter'),
-        resetFiltersBtn: document.getElementById('resetFiltersBtn'),
-        resultSummary: document.getElementById('resultSummary'),
-        tracksTableBody: document.getElementById('tracksTableBody'),
-        pageInfoText: document.getElementById('pageInfoText'),
-        pageNumberDisplay: document.getElementById('pageNumberDisplay'),
-        prevPageBtn: document.getElementById('prevPageBtn'),
-        nextPageBtn: document.getElementById('nextPageBtn'),
-        loadingOverlay: document.getElementById('loadingOverlay'),
-        loadingTitle: document.getElementById('loadingTitle'),
-        loadingDesc: document.getElementById('loadingDesc'),
-        // サーバー設定モーダル
-        serverModal: document.getElementById('serverModal'),
-        closeServerModalBtn: document.getElementById('closeServerModalBtn'),
-        remoteFetchUrl: document.getElementById('remoteFetchUrl'),
-        remoteAuthToken: document.getElementById('remoteAuthToken'),
-        autoSyncStartupCheck: document.getElementById('autoSyncStartupCheck'),
-        syncNowBtn: document.getElementById('syncNowBtn'),
-        serverFetchStatus: document.getElementById('serverFetchStatus'),
-        remotePushUrl: document.getElementById('remotePushUrl'),
-        pushNowBtn: document.getElementById('pushNowBtn'),
-        openConfirmClearBtn: document.getElementById('openConfirmClearBtn'),
-        saveServerSettingsBtn: document.getElementById('saveServerSettingsBtn'),
-        // 楽曲詳細モーダル
-        detailModal: document.getElementById('detailModal'),
-        closeModalBtn: document.getElementById('closeModalBtn'),
-        closeModalFooterBtn: document.getElementById('closeModalFooterBtn'),
-        modalArtworkImg: document.getElementById('modalArtworkImg'),
-        artworkPlaceholderIcon: document.getElementById('artworkPlaceholderIcon'),
-        modalTrackName: document.getElementById('modalTrackName'),
-        modalTrackArtist: document.getElementById('modalTrackArtist'),
-        modalTrackAlbum: document.getElementById('modalTrackAlbum'),
-        fetchItunesPreviewBtn: document.getElementById('fetchItunesPreviewBtn'),
-        previewStatusText: document.getElementById('previewStatusText'),
-        audioPreviewContainer: document.getElementById('audioPreviewContainer'),
-        appleMusicStoreLink: document.getElementById('appleMusicStoreLink'),
-        previewAudioPlayer: document.getElementById('previewAudioPlayer'),
-        modalMetaGrid: document.getElementById('modalMetaGrid'),
-        modalFilePath: document.getElementById('modalFilePath'),
-        copyTrackInfoBtn: document.getElementById('copyTrackInfoBtn'),
-        // 確認モーダル・トースト
-        confirmModal: document.getElementById('confirmModal'),
-        cancelClearBtn: document.getElementById('cancelClearBtn'),
-        confirmClearBtn: document.getElementById('confirmClearBtn'),
-        toast: document.getElementById('toast')
-      };
-
-      // ----------------------------------------------------------------------
-      // 1. テーマ・UIヘルパー
-      // ----------------------------------------------------------------------
-      function initTheme() {
-        const saved = localStorage.getItem('itunes_hybrid_theme');
-        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const isDark = saved ? saved === 'dark' : prefersDark;
-        applyTheme(isDark);
-      }
-
-      function applyTheme(isDark) {
-        if (isDark) {
-          document.documentElement.classList.add('dark');
-          els.themeIconSun.classList.remove('hidden');
-          els.themeIconMoon.classList.add('hidden');
-        } else {
-          document.documentElement.classList.remove('dark');
-          els.themeIconSun.classList.add('hidden');
-          els.themeIconMoon.classList.remove('hidden');
-        }
-        localStorage.setItem('itunes_hybrid_theme', isDark ? 'dark' : 'light');
-      }
-
-      els.themeToggleBtn.addEventListener('click', () => {
-        applyTheme(!document.documentElement.classList.contains('dark'));
+    async function saveTracksToDB(tracks, onProgress) {
+      const db = await openDB();
+      const batchSize = 5000;
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_TRACKS, 'readwrite');
+        tx.objectStore(STORE_TRACKS).clear();
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
       });
 
-      function showToast(msg) {
-        els.toast.textContent = msg;
-        els.toast.classList.remove('opacity-0', 'translate-y-2');
-        els.toast.classList.add('opacity-100', 'translate-y-0');
-        setTimeout(() => {
-          els.toast.classList.remove('opacity-100', 'translate-y-0');
-          els.toast.classList.add('opacity-0', 'translate-y-2');
-        }, 2800);
-      }
-
-      function setLoading(show, title = '処理中...', desc = 'しばらくお待ちください') {
-        if (show) {
-          els.loadingTitle.textContent = title;
-          els.loadingDesc.textContent = desc;
-          els.loadingOverlay.classList.remove('hidden');
-        } else {
-          els.loadingOverlay.classList.add('hidden');
-        }
-      }
-
-      function updateSourceStatus(sourceType, timestampStr) {
-        // sourceType: 'local' | 'server' | 'cache' | 'none'
-        const styles = {
-          local: { dot: 'bg-apple-red', text: 'ローカル読込済' },
-          server: { dot: 'bg-emerald-500', text: '外部サーバー同期済' },
-          cache: { dot: 'bg-sky-500', text: 'ローカルキャッシュ復元' },
-          none: { dot: 'bg-zinc-400', text: '未読み込み' }
-        };
-        const cfg = styles[sourceType] || styles.none;
-        els.sourceDot.className = `w-2 h-2 rounded-full ${cfg.dot}`;
-        els.sourceText.textContent = cfg.text;
-        if (timestampStr) {
-          els.lastSyncedText.textContent = `最終更新: ${timestampStr}`;
-        }
-      }
-
-      // ----------------------------------------------------------------------
-      // 2. IndexedDB ローカルキャッシュ永続化
-      // ----------------------------------------------------------------------
-      function openDB() {
-        return new Promise((resolve, reject) => {
-          const req = indexedDB.open(DB_NAME, DB_VERSION);
-          req.onupgradeneeded = (e) => {
-            const db = e.target.result;
-            if (!db.objectStoreNames.contains(STORE_NAME)) {
-              db.createObjectStore(STORE_NAME);
-            }
-          };
-          req.onsuccess = (e) => resolve(e.target.result);
-          req.onerror = (e) => reject(e.target.error);
+      for (let i = 0; i < tracks.length; i += batchSize) {
+        const slice = tracks.slice(i, i + batchSize);
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_TRACKS, 'readwrite');
+          const store = tx.objectStore(STORE_TRACKS);
+          for (const t of slice) store.put(t);
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
         });
+        if (onProgress) onProgress(Math.min(100, Math.round(((i + slice.length) / tracks.length) * 100)));
       }
+    }
 
-      async function saveLibraryToDB(payload) {
-        try {
-          const db = await openDB();
-          return new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            tx.objectStore(STORE_NAME).put(payload, DATA_KEY);
-            tx.oncomplete = () => resolve();
-            tx.onerror = (e) => reject(e.target.error);
-          });
-        } catch (err) {
-          console.error('IndexedDB保存エラー:', err);
+    async function loadTracksFromDB() {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_TRACKS, 'readonly');
+        const req = tx.objectStore(STORE_TRACKS).getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function setMeta(key, value) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_META, 'readwrite');
+        tx.objectStore(STORE_META).put({ key, value });
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    async function getMeta(key) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_META, 'readonly');
+        const req = tx.objectStore(STORE_META).get(key);
+        req.onsuccess = () => resolve(req.result ? req.result.value : null);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    // --- 状態管理 ---
+    let allTracks = [];
+    let filteredTracks = [];
+    let displayLimit = 200;
+    let syncConfig = { syncUrl: '', token: '', autoSync: false };
+
+    const dom = {
+      dbStatus: document.getElementById('dbStatus'),
+      xmlInput: document.getElementById('xmlInput'),
+      dropzone: document.getElementById('dropzone'),
+      progressWrap: document.getElementById('progressWrap'),
+      progressText: document.getElementById('progressText'),
+      progressFill: document.getElementById('progressFill'),
+      searchInput: document.getElementById('searchInput'),
+      genreFilter: document.getElementById('genreFilter'),
+      yearFilter: document.getElementById('yearFilter'),
+      sortSelect: document.getElementById('sortSelect'),
+      resetFiltersBtn: document.getElementById('resetFiltersBtn'),
+      resultCount: document.getElementById('resultCount'),
+      syncMeta: document.getElementById('syncMeta'),
+      trackTbody: document.getElementById('trackTbody'),
+      loadMoreBtn: document.getElementById('loadMoreBtn'),
+      maxFileSizeMb: document.getElementById('maxFileSizeMb'),
+      exportEstimateBox: document.getElementById('exportEstimateBox'),
+    };
+
+    function setProgress(active, text = '', pct = 0) {
+      dom.progressWrap.classList.toggle('active', active);
+      dom.progressText.textContent = text;
+      dom.progressFill.style.width = `${pct}%`;
+    }
+
+    function formatDuration(ms) {
+      if (!ms || ms <= 0) return '-';
+      const totalSec = Math.floor(ms / 1000);
+      const m = Math.floor(totalSec / 60);
+      const s = totalSec % 60;
+      return `${m}:${String(s).padStart(2, '0')}`;
+    }
+
+    function formatSize(bytes) {
+      if (!bytes || bytes <= 0) return '-';
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    }
+
+    function formatDate(isoStr) {
+      if (!isoStr) return '-';
+      const d = new Date(isoStr);
+      if (Number.isNaN(d.getTime())) return isoStr;
+      return d.toLocaleDateString('ja-JP');
+    }
+
+    function normalizeTrack(raw, idx) {
+      const name = raw.Name ?? raw.n ?? '';
+      const album = raw.Album ?? raw.b ?? '';
+      const trackNo = Number(raw['Track Number'] ?? raw.tn ?? 0) || 0;
+      const discNo = Number(raw['Disc Number'] ?? raw.dn ?? 0) || 0;
+      const artist = raw.Artist ?? raw.a ?? '';
+      const comments = raw.Comments ?? raw.c ?? '';
+      const duration = Number(raw['Total Time'] ?? raw.d ?? 0) || 0;
+      const bitrate = Number(raw['Bit Rate'] ?? raw.br ?? 0) || 0;
+      const year = Number(raw.Year ?? raw.y ?? 0) || 0;
+      const dateAdded = raw['Date Added'] ?? raw.da ?? '';
+      const genre = raw.Genre ?? raw.g ?? '';
+      const size = Number(raw.Size ?? raw.sz ?? 0) || 0;
+
+      const id = idx + 1;
+      const searchBlob = `${name} ${album} ${artist} ${comments} ${genre}`.toLowerCase();
+
+      return {
+        id, name, album, trackNo, discNo, artist, comments,
+        duration, bitrate, year, dateAdded, genre, size, searchBlob
+      };
+    }
+
+    function toCompactTrack(t) {
+      const obj = {};
+      if (t.name) obj.n = t.name;
+      if (t.album) obj.b = t.album;
+      if (t.trackNo) obj.tn = t.trackNo;
+      if (t.discNo) obj.dn = t.discNo;
+      if (t.artist) obj.a = t.artist;
+      if (t.comments) obj.c = t.comments;
+      if (t.duration) obj.d = t.duration;
+      if (t.bitrate) obj.br = t.bitrate;
+      if (t.year) obj.y = t.year;
+      if (t.dateAdded) obj.da = t.dateAdded;
+      if (t.genre) obj.g = t.genre;
+      if (t.size) obj.sz = t.size;
+      return obj;
+    }
+
+    // --- ストリーミングXML解析 ---
+    function parseDictXml(dictXmlString) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<plist>${dictXmlString}</plist>`, 'text/xml');
+      const dict = doc.querySelector('plist > dict');
+      if (!dict) return null;
+      const record = {};
+      let currentKey = null;
+      for (const child of dict.children) {
+        if (child.tagName === 'key') {
+          currentKey = child.textContent;
+        } else if (currentKey) {
+          record[currentKey] = child.textContent;
+          currentKey = null;
         }
       }
+      return record;
+    }
 
-      async function loadLibraryFromDB() {
-        try {
-          const db = await openDB();
-          return new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, 'readonly');
-            const req = tx.objectStore(STORE_NAME).get(DATA_KEY);
-            req.onsuccess = () => resolve(req.result || null);
-            req.onerror = (e) => reject(e.target.error);
-          });
-        } catch (err) {
-          console.error('IndexedDB読込エラー:', err);
-          return null;
-        }
-      }
+    async function parseLargeXmlStream(file) {
+      const reader = file.stream().getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+      let inTracks = false;
+      const tracks = [];
+      let bytesRead = 0;
 
-      async function clearLibraryFromDB() {
-        try {
-          const db = await openDB();
-          return new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            tx.objectStore(STORE_NAME).delete(DATA_KEY);
-            tx.oncomplete = () => resolve();
-            tx.onerror = (e) => reject(e.target.error);
-          });
-        } catch (err) {
-          console.error('IndexedDB削除エラー:', err);
-        }
-      }
+      setProgress(true, 'XMLをストリーミング解析中...', 0);
 
-      // ----------------------------------------------------------------------
-      // 3. Apple Plist XML パーサー（Tracks & Playlists 両対応）
-      // ----------------------------------------------------------------------
-      function parseApplePlistXML(xmlText) {
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        bytesRead += value.byteLength;
+        buffer += decoder.decode(value, { stream: true });
 
-        if (xmlDoc.querySelector('parsererror')) {
-          throw new Error('XMLの構文解析に失敗しました。正しい iTunes Library.xml か確認してください。');
-        }
-
-        const rootDict = xmlDoc.querySelector('plist > dict');
-        if (!rootDict) {
-          throw new Error('Apple Plist 形式のルート要素が見つかりません。');
-        }
-
-        let tracksDict = null;
-        let playlistsArray = null;
-        const rootChildren = rootDict.children;
-
-        for (let i = 0; i < rootChildren.length; i++) {
-          const el = rootChildren[i];
-          if (el.tagName === 'key') {
-            const keyName = el.textContent.trim();
-            if (keyName === 'Tracks') {
-              tracksDict = rootChildren[i + 1];
-            } else if (keyName === 'Playlists') {
-              playlistsArray = rootChildren[i + 1];
+        if (!inTracks) {
+          const tracksIdx = buffer.indexOf('<key>Tracks</key>');
+          if (tracksIdx !== -1) {
+            const dictStart = buffer.indexOf('<dict>', tracksIdx);
+            if (dictStart !== -1) {
+              inTracks = true;
+              buffer = buffer.slice(dictStart + 6);
             }
           }
         }
 
-        if (!tracksDict || tracksDict.tagName !== 'dict') {
-          throw new Error('XML内に「Tracks」セクションが見つかりません。');
-        }
-
-        // 1. トラック情報の抽出
-        const tracks = [];
-        const trackElements = tracksDict.children;
-        for (let i = 0; i < trackElements.length; i++) {
-          if (trackElements[i].tagName === 'dict') {
-            const track = parseSingleTrackDict(trackElements[i]);
-            if (track.name || track.artist) {
-              tracks.push(track);
-            }
-          }
-        }
-
-        // 2. プレイリスト情報の抽出
-        const playlists = [];
-        if (playlistsArray && playlistsArray.tagName === 'array') {
-          const plDicts = playlistsArray.children;
-          for (let i = 0; i < plDicts.length; i++) {
-            if (plDicts[i].tagName === 'dict') {
-              const pl = parseSinglePlaylistDict(plDicts[i]);
-              if (pl && pl.trackIds.length > 0 && !pl.isMaster) {
-                playlists.push(pl);
+        if (inTracks) {
+          let searchPos = 0;
+          while (true) {
+            const openIdx = buffer.indexOf('<dict>', searchPos);
+            if (openIdx === -1) break;
+            let depth = 0;
+            let pos = openIdx;
+            let closeIdx = -1;
+            while (pos < buffer.length) {
+              const nextOpen = buffer.indexOf('<dict>', pos);
+              const nextClose = buffer.indexOf('</dict>', pos);
+              if (nextClose === -1) break;
+              if (nextOpen !== -1 && nextOpen < nextClose) {
+                depth++;
+                pos = nextOpen + 6;
+              } else {
+                depth--;
+                if (depth === 0) {
+                  closeIdx = nextClose + 7;
+                  break;
+                }
+                pos = nextClose + 7;
               }
             }
-          }
-        }
+            if (closeIdx === -1) break;
 
-        return { tracks, playlists };
-      }
-
-      function parseSingleTrackDict(dictEl) {
-        const raw = {};
-        const children = dictEl.children;
-
-        for (let i = 0; i < children.length; i += 2) {
-          const keyEl = children[i];
-          const valEl = children[i + 1];
-          if (!keyEl || !valEl || keyEl.tagName !== 'key') continue;
-
-          const key = keyEl.textContent;
-          const tag = valEl.tagName;
-          if (tag === 'string' || tag === 'date') raw[key] = valEl.textContent;
-          else if (tag === 'integer') raw[key] = parseInt(valEl.textContent, 10);
-          else if (tag === 'real') raw[key] = parseFloat(valEl.textContent);
-          else if (tag === 'true') raw[key] = true;
-          else if (tag === 'false') raw[key] = false;
-        }
-
-        let decodedLocation = '';
-        if (raw['Location']) {
-          try {
-            decodedLocation = decodeURIComponent(raw['Location'])
-              .replace(/^file:\/\/localhost\//i, '')
-              .replace(/^file:\/\//i, '');
-          } catch {
-            decodedLocation = raw['Location'];
-          }
-        }
-
-        const timeMs = raw['Total Time'] || 0;
-        const name = raw['Name'] || '(名称未設定)';
-        const artist = raw['Artist'] || raw['Album Artist'] || '(不明なアーティスト)';
-        const albumArtist = raw['Album Artist'] || '';
-        const album = raw['Album'] || '(不明なアルバム)';
-        const composer = raw['Composer'] || '';
-        const genre = raw['Genre'] || '未分類';
-        const comments = raw['Comments'] || '';
-        const grouping = raw['Grouping'] || '';
-        const dateAddedIso = raw['Date Added'] || '';
-        const dateAddedTs = dateAddedIso ? new Date(dateAddedIso).getTime() || 0 : 0;
-
-        const searchIndex = [name, artist, albumArtist, album, genre, composer, comments, grouping]
-          .join(' ')
-          .toLowerCase();
-
-        return {
-          id: raw['Track ID'] || Math.floor(Math.random() * 1e9),
-          name,
-          artist,
-          albumArtist,
-          album,
-          composer,
-          genre,
-          year: raw['Year'] || 0,
-          timeMs,
-          timeStr: formatDuration(timeMs),
-          bpm: raw['BPM'] || 0,
-          bitRate: raw['Bit Rate'] || 0,
-          sampleRate: raw['Sample Rate'] || 0,
-          size: raw['Size'] || 0,
-          playCount: raw['Play Count'] || 0,
-          rating: raw['Rating'] || 0,
-          comments,
-          grouping,
-          dateAdded: dateAddedIso ? formatDate(dateAddedIso) : '-',
-          dateAddedTs,
-          location: decodedLocation,
-          searchIndex
-        };
-      }
-
-      function parseSinglePlaylistDict(dictEl) {
-        let name = '';
-        let playlistId = 0;
-        let isMaster = false;
-        const trackIds = [];
-        const children = dictEl.children;
-
-        for (let i = 0; i < children.length; i += 2) {
-          const keyEl = children[i];
-          const valEl = children[i + 1];
-          if (!keyEl || !valEl || keyEl.tagName !== 'key') continue;
-
-          const key = keyEl.textContent;
-          if (key === 'Name') name = valEl.textContent;
-          else if (key === 'Playlist ID') playlistId = parseInt(valEl.textContent, 10);
-          else if (key === 'Master' && valEl.tagName === 'true') isMaster = true;
-          else if (key === 'Playlist Items' && valEl.tagName === 'array') {
-            const itemDicts = valEl.children;
-            for (let j = 0; j < itemDicts.length; j++) {
-              const idInt = itemDicts[j].querySelector('integer');
-              if (idInt) trackIds.push(parseInt(idInt.textContent, 10));
+            const dictChunk = buffer.slice(openIdx, closeIdx);
+            const rawObj = parseDictXml(dictChunk);
+            if (rawObj && rawObj.Name) {
+              tracks.push(normalizeTrack(rawObj, tracks.length));
             }
+            searchPos = closeIdx;
+          }
+          if (searchPos > 0) {
+            buffer = buffer.slice(searchPos);
+          }
+          if (buffer.includes('</plist>') || (buffer.trimStart().startsWith('</dict>') && buffer.includes('<key>Playlists</key>'))) {
+            inTracks = false;
           }
         }
 
-        if (!name || name === 'ライブラリ' || name === 'Library' || name === 'ミュージック' || name === 'Music') {
-          return null;
-        }
-        return { id: playlistId || Math.random(), name, isMaster, trackIds };
+        const pct = Math.min(95, Math.round((bytesRead / file.size) * 100));
+        setProgress(true, `XML解析中: ${tracks.length.toLocaleString()} 曲抽出 (${pct}%)`, pct);
       }
 
-      // ----------------------------------------------------------------------
-      // 4. フォーマット関数
-      // ----------------------------------------------------------------------
-      function formatDuration(ms) {
-        if (!ms || ms <= 0) return '0:00';
-        const totalSec = Math.floor(ms / 1000);
-        const mins = Math.floor(totalSec / 60);
-        const secs = totalSec % 60;
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
+      setProgress(true, `IndexedDB へ保存中 (${tracks.length.toLocaleString()} 曲)...`, 96);
+      await saveTracksToDB(tracks, (p) => {
+        setProgress(true, `IndexedDB へ保存中... ${p}%`, 96 + Math.round(p * 0.04));
+      });
+      setProgress(false);
+      return tracks;
+    }
+
+    async function handleLocalFile(file) {
+      if (file.name.toLowerCase().endsWith('.json')) {
+        setProgress(true, 'JSONファイルを読み込み中...', 20);
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const arr = Array.isArray(parsed) ? parsed : (parsed.tracks || []);
+        const tracks = arr.map((item, idx) => normalizeTrack(item, idx));
+        setProgress(true, 'IndexedDB へ保存中...', 70);
+        await saveTracksToDB(tracks);
+        setProgress(false);
+        await refreshUI(tracks);
+      } else {
+        const tracks = await parseLargeXmlStream(file);
+        await refreshUI(tracks);
       }
+    }
 
-      function formatTotalPlaytime(totalMs) {
-        const totalHours = Math.floor(totalMs / (1000 * 60 * 60));
-        if (totalHours >= 24) {
-          const days = Math.floor(totalHours / 24);
-          const remHours = totalHours % 24;
-          return `${days}日 ${remHours}時間`;
-        }
-        return `${totalHours.toLocaleString()}時間`;
-      }
+    // --- 最大ファイルサイズ指定のJSON分割生成 ---
+    const textEncoder = new TextEncoder();
 
-      function formatFileSize(bytes) {
-        if (!bytes || bytes <= 0) return '-';
-        const mb = bytes / (1024 * 1024);
-        return `${mb.toFixed(1)} MB`;
-      }
+    function getByteLength(str) {
+      return textEncoder.encode(str).byteLength;
+    }
 
-      function formatStars(rating) {
-        if (!rating || rating <= 0) return '<span class="text-zinc-400 dark:text-zinc-600">-</span>';
-        const count = Math.round(rating / 20);
-        return '★'.repeat(count) + '☆'.repeat(5 - count);
-      }
+    function getValidatedMaxMb() {
+      const val = parseFloat(dom.maxFileSizeMb.value);
+      if (!Number.isFinite(val) || val < 1) return 45;
+      return Math.min(2000, val);
+    }
 
-      function formatDate(isoStr) {
-        try {
-          const d = new Date(isoStr);
-          if (isNaN(d.getTime())) return isoStr;
-          return `${d.getFullYear()}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')}`;
-        } catch {
-          return isoStr;
-        }
-      }
+    function buildSplitJsonParts(tracks, maxMb) {
+      // 安全マージン（1%または16KB）を差し引いた上限バイト数で厳密に制限
+      const rawMaxBytes = Math.floor(maxMb * 1024 * 1024);
+      const safeMaxBytes = Math.max(1024, rawMaxBytes - Math.min(16384, Math.floor(rawMaxBytes * 0.01)));
 
-      function getNowFormatted() {
-        const d = new Date();
-        return `${d.getFullYear()}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-      }
+      const parts = [];
+      let currentItems = [];
+      let currentBytes = 2; // "[" と "]"
 
-      function escapeHtml(str) {
-        if (!str) return '';
-        return String(str)
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;');
-      }
+      for (const t of tracks) {
+        const compact = toCompactTrack(t);
+        const serialized = JSON.stringify(compact);
+        const itemBytes = getByteLength(serialized);
+        const separatorBytes = currentItems.length > 0 ? 1 : 0; // ","
 
-      // ----------------------------------------------------------------------
-      // 5. データ読み込み処理（ローカルファイル & 外部サーバー同期）
-      // ----------------------------------------------------------------------
-      function normalizeJsonPayload(rawJson) {
-        // 配列単体形式 または { tracks: [...], playlists: [...] } 形式の両方に対応
-        const tracksArr = Array.isArray(rawJson) ? rawJson : (Array.isArray(rawJson.tracks) ? rawJson.tracks : null);
-        if (!tracksArr) {
-          throw new Error('有効な楽曲配列（tracks）が含まれていません。');
-        }
-        const playlistsArr = Array.isArray(rawJson.playlists) ? rawJson.playlists : [];
-
-        const normalizedTracks = tracksArr.map((t) => ({
-          ...t,
-          searchIndex: t.searchIndex || [t.name, t.artist, t.albumArtist, t.album, t.genre, t.composer, t.comments, t.grouping].join(' ').toLowerCase()
-        }));
-
-        return { tracks: normalizedTracks, playlists: playlistsArr };
-      }
-
-      async function handleLocalFile(file) {
-        if (!file) return;
-        const isJson = file.name.toLowerCase().endsWith('.json');
-        setLoading(true, `「${file.name}」を読み込み中...`, '大容量XMLの場合は数秒かかります');
-        await new Promise((r) => setTimeout(r, 40));
-
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          try {
-            const text = e.target.result;
-            const parsed = isJson ? normalizeJsonPayload(JSON.parse(text)) : parseApplePlistXML(text);
-
-            if (parsed.tracks.length === 0) {
-              throw new Error('有効な楽曲データが見つかりませんでした。');
-            }
-
-            const timestamp = getNowFormatted();
-            await saveLibraryToDB({
-              tracks: parsed.tracks,
-              playlists: parsed.playlists,
-              sourceType: 'local',
-              updatedAt: timestamp
-            });
-
-            renderLibraryDashboard(parsed.tracks, parsed.playlists, 'local', timestamp);
-            showToast(`${parsed.tracks.length.toLocaleString()} 曲をローカルから読み込みました！`);
-          } catch (err) {
-            showToast(`読込エラー: ${err.message}`);
-            console.error(err);
-          } finally {
-            setLoading(false);
-          }
-        };
-        reader.onerror = () => {
-          setLoading(false);
-          showToast('ファイルの読み込みに失敗しました。');
-        };
-        reader.readAsText(file, 'UTF-8');
-      }
-
-      // 外部サーバーから取得（Pull / Sync）
-      async function syncFromRemoteServer(silent = false) {
-        const url = serverSettings.fetchUrl.trim();
-        if (!url) {
-          if (!silent) showToast('サーバーURLが設定されていません');
-          return;
-        }
-
-        if (!silent) {
-          setLoading(true, '外部サーバーと同期中...', url);
-        }
-        els.serverFetchStatus.textContent = '通信中...';
-
-        try {
-          const headers = {};
-          if (serverSettings.authToken) {
-            headers['Authorization'] = `Bearer ${serverSettings.authToken}`;
-          }
-
-          const res = await fetch(url, { method: 'GET', headers });
-          if (!res.ok) {
-            throw new Error(`HTTPエラー (${res.status} ${res.statusText})`);
-          }
-
-          const rawText = await res.text();
-          const trimmed = rawText.trim();
-          let parsed;
-
-          if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-            parsed = normalizeJsonPayload(JSON.parse(trimmed));
-          } else if (trimmed.startsWith('<?xml') || trimmed.includes('<plist')) {
-            parsed = parseApplePlistXML(trimmed);
-          } else {
-            throw new Error('サーバーの応答がXMLでもJSONでもありません。');
-          }
-
-          if (parsed.tracks.length === 0) {
-            throw new Error('サーバーデータ内に楽曲が見つかりませんでした。');
-          }
-
-          const timestamp = getNowFormatted();
-          await saveLibraryToDB({
-            tracks: parsed.tracks,
-            playlists: parsed.playlists,
-            sourceType: 'server',
-            updatedAt: timestamp
-          });
-
-          renderLibraryDashboard(parsed.tracks, parsed.playlists, 'server', timestamp);
-          els.serverFetchStatus.textContent = `同期完了 (${parsed.tracks.length.toLocaleString()} 曲)`;
-          showToast(`サーバーから ${parsed.tracks.length.toLocaleString()} 曲を同期しました！`);
-        } catch (err) {
-          console.error('サーバー同期エラー:', err);
-          els.serverFetchStatus.textContent = `エラー: ${err.message}`;
-          if (!silent) {
-            showToast(`同期失敗: ${err.message}`);
-          }
-        } finally {
-          if (!silent) setLoading(false);
-        }
-      }
-
-      // 外部サーバーへ送信（Push / Upload）
-      async function pushToRemoteServer() {
-        if (allTracks.length === 0) {
-          showToast('送信するライブラリデータがありません。先にXML等を読み込んでください。');
-          return;
-        }
-
-        const targetUrl = (serverSettings.pushUrl || serverSettings.fetchUrl).trim();
-        if (!targetUrl) {
-          showToast('送信先エンドポイントURLを設定してください。');
-          return;
-        }
-
-        setLoading(true, 'サーバーへライブラリを送信中...', `${allTracks.length.toLocaleString()} 曲のデータをアップロードしています`);
-
-        try {
-          const headers = {
-            'Content-Type': 'application/json'
-          };
-          if (serverSettings.authToken) {
-            headers['Authorization'] = `Bearer ${serverSettings.authToken}`;
-          }
-
-          // searchIndexを除いた軽量ペイロードを作成
-          const cleanTracks = allTracks.map(({ searchIndex, ...rest }) => rest);
-          const cleanPlaylists = allPlaylists.map((pl) => ({
-            id: pl.id,
-            name: pl.name,
-            trackIds: Array.from(pl.trackIds)
-          }));
-
-          const payload = JSON.stringify({
-            updatedAt: new Date().toISOString(),
-            totalTracks: cleanTracks.length,
-            tracks: cleanTracks,
-            playlists: cleanPlaylists
-          });
-
-          const res = await fetch(targetUrl, {
-            method: 'POST',
-            headers,
-            body: payload
-          });
-
-          if (!res.ok) {
-            throw new Error(`HTTPエラー (${res.status} ${res.statusText})`);
-          }
-
-          showToast('サーバーへのライブラリ送信が完了しました！');
-        } catch (err) {
-          console.error('サーバー送信エラー:', err);
-          showToast(`送信失敗: ${err.message}`);
-        } finally {
-          setLoading(false);
-        }
-      }
-
-      // ----------------------------------------------------------------------
-      // 6. ダッシュボード描画 & フィルター初期化
-      // ----------------------------------------------------------------------
-      function renderLibraryDashboard(tracks, playlists, sourceType, timestamp) {
-        allTracks = tracks;
-        allPlaylists = (playlists || []).map((pl) => ({
-          ...pl,
-          trackIds: pl.trackIds instanceof Set ? pl.trackIds : new Set(pl.trackIds || [])
-        }));
-
-        // 統計計算
-        const artistsSet = new Set();
-        const albumsSet = new Set();
-        const genresMap = new Map();
-        const yearsSet = new Set();
-        let totalTimeMs = 0;
-
-        for (let i = 0; i < tracks.length; i++) {
-          const t = tracks[i];
-          if (t.artist) artistsSet.add(t.artist);
-          if (t.album) albumsSet.add(t.album);
-          if (t.genre) genresMap.set(t.genre, (genresMap.get(t.genre) || 0) + 1);
-          if (t.year && t.year > 1900) yearsSet.add(t.year);
-          totalTimeMs += t.timeMs || 0;
-        }
-
-        els.statTotalTracks.textContent = `${tracks.length.toLocaleString()} 曲`;
-        els.statTotalArtists.textContent = artistsSet.size.toLocaleString();
-        els.statTotalAlbums.textContent = albumsSet.size.toLocaleString();
-        els.statTotalTime.textContent = formatTotalPlaytime(totalTimeMs);
-
-        // プレイリスト選択肢
-        els.playlistFilter.innerHTML = '<option value="">すべてのプレイリスト</option>';
-        allPlaylists.forEach((pl, idx) => {
-          const opt = document.createElement('option');
-          opt.value = String(idx);
-          opt.textContent = `${pl.name} (${pl.trackIds.size})`;
-          els.playlistFilter.appendChild(opt);
-        });
-
-        // ジャンル選択肢
-        const sortedGenres = Array.from(genresMap.entries()).sort((a, b) => b[1] - a[1]);
-        els.genreFilter.innerHTML = '<option value="">すべてのジャンル</option>';
-        sortedGenres.forEach(([genre, count]) => {
-          const opt = document.createElement('option');
-          opt.value = genre;
-          opt.textContent = `${genre} (${count})`;
-          els.genreFilter.appendChild(opt);
-        });
-
-        // 年代選択肢
-        const sortedYears = Array.from(yearsSet).sort((a, b) => b - a);
-        els.yearFilter.innerHTML = '<option value="">すべてのリリース年</option>';
-        sortedYears.forEach((y) => {
-          const opt = document.createElement('option');
-          opt.value = String(y);
-          opt.textContent = `${y}年`;
-          els.yearFilter.appendChild(opt);
-        });
-
-        // 表示切替
-        els.welcomeView.classList.add('hidden');
-        els.libraryView.classList.remove('hidden');
-        els.exportJsonBtn.classList.remove('hidden');
-        els.exportJsonBtn.classList.add('inline-flex');
-
-        updateSourceStatus(sourceType, timestamp);
-        applyFiltersAndSort();
-      }
-
-      // ----------------------------------------------------------------------
-      // 7. 高速検索・フィルタリング・ソート
-      // ----------------------------------------------------------------------
-      function applyFiltersAndSort() {
-        const rawQuery = els.searchInput.value.trim().toLowerCase();
-        const keywords = rawQuery ? rawQuery.split(/\s+/) : [];
-        const selectedPlIdx = els.playlistFilter.value;
-        const selectedPlaylist = selectedPlIdx !== '' ? allPlaylists[parseInt(selectedPlIdx, 10)] : null;
-        const selectedGenre = els.genreFilter.value;
-        const selectedYear = els.yearFilter.value;
-        const minRating = parseInt(els.ratingFilter.value, 10) || 0;
-
-        els.clearSearchBtn.classList.toggle('hidden', rawQuery.length === 0);
-
-        filteredTracks = allTracks.filter((track) => {
-          if (selectedPlaylist && !selectedPlaylist.trackIds.has(track.id)) return false;
-          if (selectedGenre && track.genre !== selectedGenre) return false;
-          if (selectedYear && String(track.year) !== selectedYear) return false;
-          if (minRating > 0 && track.rating < minRating) return false;
-
-          if (keywords.length > 0) {
-            for (let i = 0; i < keywords.length; i++) {
-              if (!track.searchIndex.includes(keywords[i])) return false;
-            }
-          }
-          return true;
-        });
-
-        // ソート
-        const { key, direction } = sortConfig;
-        const mult = direction === 'asc' ? 1 : -1;
-
-        filteredTracks.sort((a, b) => {
-          const valA = a[key];
-          const valB = b[key];
-          if (typeof valA === 'number' && typeof valB === 'number') {
-            return (valA - valB) * mult;
-          }
-          return String(valA || '').localeCompare(String(valB || ''), 'ja') * mult;
-        });
-
-        document.querySelectorAll('th[data-sort]').forEach((th) => {
-          const span = th.querySelector('.sort-indicator');
-          span.textContent = th.dataset.sort === sortConfig.key ? (sortConfig.direction === 'asc' ? '▲' : '▼') : '';
-        });
-
-        currentPage = 1;
-        renderTable();
-      }
-
-      function renderTable() {
-        const total = filteredTracks.length;
-        els.resultSummary.textContent = `${total.toLocaleString()} 件ヒット（全 ${allTracks.length.toLocaleString()} 曲中）`;
-
-        const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-        if (currentPage > totalPages) currentPage = totalPages;
-
-        const startIdx = (currentPage - 1) * PAGE_SIZE;
-        const endIdx = Math.min(startIdx + PAGE_SIZE, total);
-        const pageItems = filteredTracks.slice(startIdx, endIdx);
-
-        els.pageInfoText.textContent = total === 0
-          ? '該当する楽曲が見つかりませんでした'
-          : `${(startIdx + 1).toLocaleString()} - ${endIdx.toLocaleString()} 件を表示中`;
-        els.pageNumberDisplay.textContent = `${currentPage} / ${totalPages}`;
-        els.prevPageBtn.disabled = currentPage <= 1;
-        els.nextPageBtn.disabled = currentPage >= totalPages;
-
-        const fragment = document.createDocumentFragment();
-
-        if (pageItems.length === 0) {
-          const tr = document.createElement('tr');
-          tr.innerHTML = `<td colspan="9" class="py-12 text-center text-zinc-500 dark:text-zinc-400">検索条件に一致する楽曲がありません</td>`;
-          fragment.appendChild(tr);
+        if (currentItems.length > 0 && currentBytes + separatorBytes + itemBytes > safeMaxBytes) {
+          parts.push(`[${currentItems.join(',')}]`);
+          currentItems = [serialized];
+          currentBytes = 2 + itemBytes;
         } else {
-          pageItems.forEach((track) => {
-            const tr = document.createElement('tr');
-            tr.className = 'hover:bg-zinc-50 dark:hover:bg-white/[0.04] cursor-pointer transition-colors';
-            tr.innerHTML = `
-              <td class="py-2.5 px-4 font-semibold max-w-[240px] truncate" title="${escapeHtml(track.name)}">${escapeHtml(track.name)}</td>
-              <td class="py-2.5 px-4 text-zinc-600 dark:text-zinc-300 max-w-[200px] truncate" title="${escapeHtml(track.artist)}">${escapeHtml(track.artist)}</td>
-              <td class="py-2.5 px-4 text-zinc-500 dark:text-zinc-400 max-w-[200px] truncate hidden md:table-cell" title="${escapeHtml(track.album)}">${escapeHtml(track.album)}</td>
-              <td class="py-2.5 px-4 hidden lg:table-cell">
-                <span class="inline-block px-2.5 py-0.5 rounded-full text-xs bg-zinc-100 dark:bg-apple-darkElevated text-zinc-600 dark:text-zinc-300 max-w-[130px] truncate" title="${escapeHtml(track.genre)}">
-                  ${escapeHtml(track.genre)}
-                </span>
-              </td>
-              <td class="py-2.5 px-4 text-right text-zinc-500 dark:text-zinc-400 tabular-nums hidden sm:table-cell">${track.year > 0 ? track.year : '-'}</td>
-              <td class="py-2.5 px-4 text-right text-zinc-500 dark:text-zinc-400 tabular-nums">${track.timeStr}</td>
-              <td class="py-2.5 px-4 text-amber-500 dark:text-amber-400 tracking-wider text-xs hidden xl:table-cell">${formatStars(track.rating)}</td>
-              <td class="py-2.5 px-4 text-right text-zinc-500 dark:text-zinc-400 tabular-nums hidden lg:table-cell">${track.playCount > 0 ? track.playCount.toLocaleString() : '-'}</td>
-              <td class="py-2.5 px-4 text-right text-zinc-500 dark:text-zinc-400 tabular-nums text-xs hidden xl:table-cell">${track.dateAdded}</td>
-            `;
-            tr.addEventListener('click', () => openTrackDetailModal(track));
-            fragment.appendChild(tr);
-          });
-        }
-
-        els.tracksTableBody.innerHTML = '';
-        els.tracksTableBody.appendChild(fragment);
-      }
-
-      // ----------------------------------------------------------------------
-      // 8. 楽曲詳細モーダル & iTunes Search API 連携（アートワーク・30秒試聴）
-      // ----------------------------------------------------------------------
-      function openTrackDetailModal(track) {
-        currentModalTrack = track;
-        els.modalTrackName.textContent = track.name;
-        els.modalTrackArtist.textContent = track.artist;
-        els.modalTrackAlbum.textContent = track.album;
-
-        // 試聴＆アートワーク状態をリセット
-        els.modalArtworkImg.classList.add('hidden');
-        els.modalArtworkImg.src = '';
-        els.artworkPlaceholderIcon.classList.remove('hidden');
-        els.audioPreviewContainer.classList.add('hidden');
-        els.previewAudioPlayer.pause();
-        els.previewAudioPlayer.src = '';
-        els.previewStatusText.textContent = '';
-
-        const metaItems = [
-          { label: 'ジャンル', value: track.genre },
-          { label: 'リリース年', value: track.year > 0 ? `${track.year}年` : '-' },
-          { label: '再生時間', value: track.timeStr },
-          { label: 'BPM', value: track.bpm > 0 ? track.bpm : '-' },
-          { label: 'ビットレート', value: track.bitRate > 0 ? `${track.bitRate} kbps` : '-' },
-          { label: 'サンプルレート', value: track.sampleRate > 0 ? `${(track.sampleRate / 1000).toFixed(1)} kHz` : '-' },
-          { label: 'ファイルサイズ', value: formatFileSize(track.size) },
-          { label: 'レート', value: track.rating > 0 ? `${Math.round(track.rating / 20)} / 5 (${track.rating})` : '-' },
-          { label: '再生回数', value: `${track.playCount.toLocaleString()} 回` },
-          { label: '作曲者', value: track.composer || '-' },
-          { label: '追加日', value: track.dateAdded },
-          { label: 'コメント', value: track.comments || '-' }
-        ];
-
-        els.modalMetaGrid.innerHTML = metaItems
-          .map(
-            (item) => `
-            <div class="p-2.5 rounded-xl bg-zinc-50 dark:bg-apple-darkBg border border-zinc-200/80 dark:border-apple-darkBorder">
-              <div class="text-[10px] font-bold uppercase text-zinc-400">${escapeHtml(item.label)}</div>
-              <div class="text-xs sm:text-sm font-medium mt-0.5 break-words">${escapeHtml(String(item.value))}</div>
-            </div>
-          `
-          )
-          .join('');
-
-        els.modalFilePath.textContent = track.location || '（ローカルパス情報なし）';
-        els.detailModal.classList.remove('hidden');
-      }
-
-      function closeTrackDetailModal() {
-        els.previewAudioPlayer.pause();
-        els.detailModal.classList.add('hidden');
-        currentModalTrack = null;
-      }
-
-      // iTunes Search API（公式公開API）からアートワーク＆試聴URLを取得
-      async function fetchItunesStoreMetadata() {
-        if (!currentModalTrack) return;
-        const query = encodeURIComponent(`${currentModalTrack.artist} ${currentModalTrack.name}`);
-        const apiUrl = `https://itunes.apple.com/search?term=${query}&media=music&entity=song&country=JP&limit=3`;
-
-        els.previewStatusText.textContent = 'iTunes Storeを検索中...';
-
-        try {
-          const res = await fetch(apiUrl);
-          if (!res.ok) throw new Error('API通信エラー');
-          const data = await res.json();
-
-          if (!data.results || data.results.length === 0) {
-            els.previewStatusText.textContent = 'Store内に一致する楽曲が見つかりませんでした';
-            return;
-          }
-
-          const hit = data.results[0];
-          if (hit.artworkUrl100) {
-            // 高解像度版URLへ変換
-            const highResArt = hit.artworkUrl100.replace('100x100bb', '300x300bb');
-            els.modalArtworkImg.src = highResArt;
-            els.modalArtworkImg.onload = () => {
-              els.artworkPlaceholderIcon.classList.add('hidden');
-              els.modalArtworkImg.classList.remove('hidden');
-            };
-          }
-
-          if (hit.previewUrl) {
-            els.previewAudioPlayer.src = hit.previewUrl;
-            els.audioPreviewContainer.classList.remove('hidden');
-            if (hit.trackViewUrl) {
-              els.appleMusicStoreLink.href = hit.trackViewUrl;
-            }
-            els.previewStatusText.textContent = '取得完了！';
-          } else {
-            els.previewStatusText.textContent = 'ジャケ写を取得しました（試聴音源なし）';
-          }
-        } catch (err) {
-          console.error('iTunes API エラー:', err);
-          els.previewStatusText.textContent = 'オフラインまたは通信エラーのため取得できませんでした';
+          currentItems.push(serialized);
+          currentBytes += separatorBytes + itemBytes;
         }
       }
-
-      // ----------------------------------------------------------------------
-      // 9. サーバー設定の保存・読み込み
-      // ----------------------------------------------------------------------
-      function loadServerSettings() {
-        try {
-          const saved = localStorage.getItem(SETTINGS_KEY);
-          if (saved) {
-            serverSettings = { ...serverSettings, ...JSON.parse(saved) };
-          }
-        } catch (e) {
-          console.error(e);
-        }
-        syncSettingsToUI();
+      if (currentItems.length > 0) {
+        parts.push(`[${currentItems.join(',')}]`);
       }
 
-      function syncSettingsToUI() {
-        els.remoteFetchUrl.value = serverSettings.fetchUrl || '';
-        els.remotePushUrl.value = serverSettings.pushUrl || '';
-        els.remoteAuthToken.value = serverSettings.authToken || '';
-        els.autoSyncStartupCheck.checked = Boolean(serverSettings.autoSync);
-
-        // ヘッダーの「サーバー同期」ボタン表示制御
-        if (serverSettings.fetchUrl.trim()) {
-          els.headerSyncBtn.classList.remove('hidden');
-          els.headerSyncBtn.classList.add('inline-flex');
-        } else {
-          els.headerSyncBtn.classList.add('hidden');
-          els.headerSyncBtn.classList.remove('inline-flex');
-        }
-      }
-
-      function saveServerSettingsFromUI() {
-        serverSettings = {
-          fetchUrl: els.remoteFetchUrl.value.trim(),
-          pushUrl: els.remotePushUrl.value.trim(),
-          authToken: els.remoteAuthToken.value.trim(),
-          autoSync: els.autoSyncStartupCheck.checked
-        };
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify(serverSettings));
-        syncSettingsToUI();
-        showToast('サーバー連携設定を保存しました');
-      }
-
-      // ----------------------------------------------------------------------
-      // 10. イベントリスナー登録
-      // ----------------------------------------------------------------------
-      // ローカルファイル選択 & D&D
-      els.headerLoadLocalBtn.addEventListener('click', () => els.fileInput.click());
-      els.dropZone.addEventListener('click', () => els.fileInput.click());
-      els.fileInput.addEventListener('change', (e) => {
-        if (e.target.files && e.target.files[0]) {
-          handleLocalFile(e.target.files[0]);
-          e.target.value = '';
-        }
+      const files = [];
+      const partNames = [];
+      parts.forEach((jsonStr, idx) => {
+        const fileName = `part-${String(idx + 1).padStart(3, '0')}.json`;
+        partNames.push(fileName);
+        files.push({
+          name: fileName,
+          content: jsonStr,
+          bytes: getByteLength(jsonStr)
+        });
       });
 
-      els.dropZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        els.dropZone.classList.add('border-apple-red', 'bg-rose-500/5');
-      });
-      els.dropZone.addEventListener('dragleave', () => {
-        els.dropZone.classList.remove('border-apple-red', 'bg-rose-500/5');
-      });
-      els.dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        els.dropZone.classList.remove('border-apple-red', 'bg-rose-500/5');
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-          handleLocalFile(e.dataTransfer.files[0]);
-        }
-      });
-
-      // サーバー設定モーダル操作
-      const openServerModal = () => {
-        syncSettingsToUI();
-        els.serverModal.classList.remove('hidden');
+      const manifestObj = {
+        version: 1,
+        generatedAt: new Date().toISOString(),
+        maxFileSizeMB: maxMb,
+        totalTracks: tracks.length,
+        parts: partNames
       };
-      els.openServerSettingsBtn.addEventListener('click', openServerModal);
-      els.welcomeServerCard.addEventListener('click', openServerModal);
-      els.closeServerModalBtn.addEventListener('click', () => els.serverModal.classList.add('hidden'));
-      els.serverModal.addEventListener('click', (e) => {
-        if (e.target === els.serverModal) els.serverModal.classList.add('hidden');
+      const manifestStr = JSON.stringify(manifestObj, null, 2);
+      files.unshift({
+        name: 'manifest.json',
+        content: manifestStr,
+        bytes: getByteLength(manifestStr)
       });
 
-      els.saveServerSettingsBtn.addEventListener('click', () => {
-        saveServerSettingsFromUI();
-        els.serverModal.classList.add('hidden');
-      });
+      return files;
+    }
 
-      els.syncNowBtn.addEventListener('click', async () => {
-        saveServerSettingsFromUI();
-        await syncFromRemoteServer(false);
-      });
+    function updateExportEstimate() {
+      if (!allTracks.length) {
+        dom.exportEstimateBox.textContent = '楽曲データがありません。';
+        return;
+      }
+      const maxMb = getValidatedMaxMb();
+      // サンプル1000曲から平均バイト数を高速推定
+      const sampleCount = Math.min(1000, allTracks.length);
+      let sampleBytes = 0;
+      for (let i = 0; i < sampleCount; i++) {
+        sampleBytes += getByteLength(JSON.stringify(toCompactTrack(allTracks[i]))) + 1;
+      }
+      const avgBytesPerTrack = sampleBytes / sampleCount;
+      const estimatedTotalBytes = Math.ceil(avgBytesPerTrack * allTracks.length) + 2;
+      const maxBytes = maxMb * 1024 * 1024;
+      const estimatedParts = Math.max(1, Math.ceil(estimatedTotalBytes / maxBytes));
 
-      els.headerSyncBtn.addEventListener('click', () => syncFromRemoteServer(false));
+      dom.exportEstimateBox.innerHTML =
+        `推定合計データサイズ: <strong>${formatSize(estimatedTotalBytes)}</strong>（全 ${allTracks.length.toLocaleString()} 曲）<br>` +
+        `出力ファイル構成: <strong>manifest.json</strong> ＋ <strong>part-001.json 〜 part-${String(estimatedParts).padStart(3, '0')}.json</strong>（データ部 約 ${estimatedParts} ファイル / 各最大 ${maxMb} MB 以下）`;
+    }
 
-      els.pushNowBtn.addEventListener('click', async () => {
-        saveServerSettingsFromUI();
-        await pushToRemoteServer();
-      });
+    // --- サーバー同期 ---
+    async function syncFromServer(config) {
+      if (!config.syncUrl) return;
+      const headers = {};
+      if (config.token) headers['Authorization'] = `Bearer ${config.token}`;
 
-      // JSONエクスポート（サーバー配置用の軽量JSON出力）
-      els.exportJsonBtn.addEventListener('click', () => {
-        if (allTracks.length === 0) return;
-        const cleanTracks = allTracks.map(({ searchIndex, ...rest }) => rest);
-        const cleanPlaylists = allPlaylists.map((pl) => ({
-          id: pl.id,
-          name: pl.name,
-          trackIds: Array.from(pl.trackIds)
-        }));
-        const output = {
-          exportedAt: new Date().toISOString(),
-          tracks: cleanTracks,
-          playlists: cleanPlaylists
-        };
-        const blob = new Blob([JSON.stringify(output)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `library_${new Date().toISOString().slice(0, 10)}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast('サーバー配置用の library.json を書き出しました');
-      });
+      setProgress(true, 'サーバーからデータを取得中...', 10);
+      const res = await fetch(config.syncUrl, { headers });
+      if (!res.ok) throw new Error(`データ取得失敗 (${res.status})`);
+      const data = await res.json();
 
-      // 検索・フィルター
-      let searchTimer = null;
-      els.searchInput.addEventListener('input', () => {
-        clearTimeout(searchTimer);
-        searchTimer = setTimeout(applyFiltersAndSort, 140);
-      });
-      els.clearSearchBtn.addEventListener('click', () => {
-        els.searchInput.value = '';
-        applyFiltersAndSort();
-        els.searchInput.focus();
-      });
-
-      els.playlistFilter.addEventListener('change', applyFiltersAndSort);
-      els.genreFilter.addEventListener('change', applyFiltersAndSort);
-      els.yearFilter.addEventListener('change', applyFiltersAndSort);
-      els.ratingFilter.addEventListener('change', applyFiltersAndSort);
-
-      els.resetFiltersBtn.addEventListener('click', () => {
-        els.searchInput.value = '';
-        els.playlistFilter.value = '';
-        els.genreFilter.value = '';
-        els.yearFilter.value = '';
-        els.ratingFilter.value = '0';
-        applyFiltersAndSort();
-      });
-
-      // ソート
-      document.querySelectorAll('th[data-sort]').forEach((th) => {
-        th.addEventListener('click', () => {
-          const key = th.dataset.sort;
-          if (sortConfig.key === key) {
-            sortConfig.direction = sortConfig.direction === 'asc' ? 'desc' : 'asc';
-          } else {
-            sortConfig.key = key;
-            sortConfig.direction = ['year', 'playCount', 'rating', 'dateAddedTs'].includes(key) ? 'desc' : 'asc';
+      let merged = [];
+      if (Array.isArray(data)) {
+        setProgress(true, `${data.length.toLocaleString()} 曲を展開中...`, 60);
+        merged = data.map((item, idx) => normalizeTrack(item, idx));
+      } else if (Array.isArray(data.parts)) {
+        const baseUrl = config.syncUrl.slice(0, config.syncUrl.lastIndexOf('/') + 1);
+        for (let i = 0; i < data.parts.length; i++) {
+          const partFile = data.parts[i];
+          const partUrl = partFile.startsWith('http') ? partFile : `${baseUrl}${partFile}`;
+          const pct = Math.round((i / data.parts.length) * 80) + 10;
+          setProgress(true, `分割ファイル取得中 (${i + 1}/${data.parts.length}: ${partFile})...`, pct);
+          const pRes = await fetch(partUrl, { headers });
+          if (!pRes.ok) throw new Error(`${partFile} 取得失敗 (${pRes.status})`);
+          const partArr = await pRes.json();
+          for (const item of partArr) {
+            merged.push(normalizeTrack(item, merged.length));
           }
-          applyFiltersAndSort();
-        });
+        }
+      } else if (Array.isArray(data.tracks)) {
+        merged = data.tracks.map((item, idx) => normalizeTrack(item, idx));
+      } else {
+        throw new Error('対応していないJSONフォーマットです');
+      }
+
+      setProgress(true, 'IndexedDB へ保存中...', 92);
+      await saveTracksToDB(merged);
+      await setMeta('lastSyncAt', new Date().toISOString());
+      setProgress(false);
+      return merged;
+    }
+
+    // --- フィルタ＆描画 ---
+    function populateFilterOptions(tracks) {
+      const genres = new Set();
+      const years = new Set();
+      for (const t of tracks) {
+        if (t.genre) genres.add(t.genre);
+        if (t.year) years.add(t.year);
+      }
+      const prevGenre = dom.genreFilter.value;
+      const prevYear = dom.yearFilter.value;
+
+      dom.genreFilter.innerHTML = '<option value="">全ジャンル</option>' +
+        Array.from(genres).sort((a, b) => a.localeCompare(b, 'ja')).map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
+      dom.yearFilter.innerHTML = '<option value="">全リリース年</option>' +
+        Array.from(years).sort((a, b) => b - a).map(y => `<option value="${y}">${y}</option>`).join('');
+
+      dom.genreFilter.value = prevGenre;
+      dom.yearFilter.value = prevYear;
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s]));
+    }
+
+    function applyFiltersAndRender() {
+      const q = dom.searchInput.value.trim().toLowerCase();
+      const terms = q ? q.split(/\s+/) : [];
+      const genre = dom.genreFilter.value;
+      const year = Number(dom.yearFilter.value) || 0;
+
+      filteredTracks = allTracks.filter(t => {
+        if (genre && t.genre !== genre) return false;
+        if (year && t.year !== year) return false;
+        if (terms.length > 0) {
+          for (const term of terms) {
+            if (!t.searchBlob.includes(term)) return false;
+          }
+        }
+        return true;
       });
 
-      // ページネーション
-      els.prevPageBtn.addEventListener('click', () => {
-        if (currentPage > 1) {
-          currentPage--;
-          renderTable();
-          window.scrollTo({ top: 0, behavior: 'smooth' });
+      const [field, dir] = dom.sortSelect.value.split('-');
+      const mult = dir === 'desc' ? -1 : 1;
+
+      filteredTracks.sort((a, b) => {
+        if (['trackNo', 'discNo', 'duration', 'bitrate', 'year', 'size'].includes(field)) {
+          return ((a[field] || 0) - (b[field] || 0)) * mult;
+        }
+        return String(a[field] || '').localeCompare(String(b[field] || ''), 'ja') * mult;
+      });
+
+      renderTable();
+    }
+
+    function renderTable() {
+      const slice = filteredTracks.slice(0, displayLimit);
+      dom.trackTbody.innerHTML = slice.map((t, i) => `
+        <tr data-idx="${i}">
+          <td title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</td>
+          <td title="${escapeHtml(t.album)}">${escapeHtml(t.album)}</td>
+          <td class="num">${t.trackNo || '-'}</td>
+          <td class="num">${t.discNo || '-'}</td>
+          <td title="${escapeHtml(t.artist)}">${escapeHtml(t.artist)}</td>
+          <td title="${escapeHtml(t.comments)}">${escapeHtml(t.comments)}</td>
+          <td class="num">${formatDuration(t.duration)}</td>
+          <td class="num">${t.bitrate ? `${t.bitrate} kbps` : '-'}</td>
+          <td class="num">${t.year || '-'}</td>
+          <td>${formatDate(t.dateAdded)}</td>
+          <td>${escapeHtml(t.genre)}</td>
+          <td class="num">${formatSize(t.size)}</td>
+        </tr>
+      `).join('');
+
+      dom.resultCount.textContent = `表示: ${slice.length.toLocaleString()} / 絞込: ${filteredTracks.length.toLocaleString()} / 総曲数: ${allTracks.length.toLocaleString()}`;
+      dom.loadMoreBtn.style.display = filteredTracks.length > displayLimit ? 'inline-flex' : 'none';
+    }
+
+    async function refreshUI(tracks) {
+      allTracks = tracks;
+      displayLimit = 200;
+      populateFilterOptions(allTracks);
+      applyFiltersAndRender();
+      dom.dbStatus.textContent = `登録済: ${allTracks.length.toLocaleString()} 曲`;
+      dom.dbStatus.classList.toggle('ok', allTracks.length > 0);
+      const lastSync = await getMeta('lastSyncAt');
+      dom.syncMeta.textContent = lastSync ? `最終同期: ${new Date(lastSync).toLocaleString('ja-JP')}` : 'ローカルキャッシュ利用中';
+    }
+
+    // --- イベント登録 ---
+    dom.xmlInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        await handleLocalFile(file);
+      } catch (err) {
+        alert(`読込エラー: ${err.message}`);
+        setProgress(false);
+      }
+      e.target.value = '';
+    });
+
+    ['dragenter', 'dragover'].forEach(ev => {
+      dom.dropzone.addEventListener(ev, (e) => {
+        e.preventDefault();
+        dom.dropzone.classList.add('dragover');
+      });
+    });
+    ['dragleave', 'drop'].forEach(ev => {
+      dom.dropzone.addEventListener(ev, (e) => {
+        e.preventDefault();
+        dom.dropzone.classList.remove('dragover');
+      });
+    });
+    dom.dropzone.addEventListener('drop', async (e) => {
+      const file = e.dataTransfer?.files?.[0];
+      if (!file) return;
+      try {
+        await handleLocalFile(file);
+      } catch (err) {
+        alert(`読込エラー: ${err.message}`);
+        setProgress(false);
+      }
+    });
+
+    [dom.searchInput, dom.genreFilter, dom.yearFilter, dom.sortSelect].forEach(el => {
+      el.addEventListener('input', () => { displayLimit = 200; applyFiltersAndRender(); });
+      el.addEventListener('change', () => { displayLimit = 200; applyFiltersAndRender(); });
+    });
+
+    dom.resetFiltersBtn.addEventListener('click', () => {
+      dom.searchInput.value = '';
+      dom.genreFilter.value = '';
+      dom.yearFilter.value = '';
+      displayLimit = 200;
+      applyFiltersAndRender();
+    });
+
+    dom.loadMoreBtn.addEventListener('click', () => {
+      displayLimit += 200;
+      renderTable();
+    });
+
+    document.querySelectorAll('th[data-sort]').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.sort;
+        const cur = dom.sortSelect.value;
+        const nextDir = cur === `${col}-asc` ? 'desc' : 'asc';
+        const optionVal = `${col}-${nextDir}`;
+        if ([...dom.sortSelect.options].some(o => o.value === optionVal)) {
+          dom.sortSelect.value = optionVal;
+          applyFiltersAndRender();
         }
       });
-      els.nextPageBtn.addEventListener('click', () => {
-        const totalPages = Math.ceil(filteredTracks.length / PAGE_SIZE);
-        if (currentPage < totalPages) {
-          currentPage++;
-          renderTable();
-          window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    // 詳細モーダル
+    dom.trackTbody.addEventListener('click', (e) => {
+      const tr = e.target.closest('tr');
+      if (!tr) return;
+      const t = filteredTracks[Number(tr.dataset.idx)];
+      if (!t) return;
+
+      document.getElementById('detailTitle').textContent = t.name || '無題';
+      const rows = [
+        ['曲名', t.name],
+        ['アルバム名', t.album],
+        ['曲番号', t.trackNo || '-'],
+        ['アルバム番号', t.discNo || '-'],
+        ['アーティスト名', t.artist],
+        ['備考', t.comments],
+        ['再生時間', formatDuration(t.duration)],
+        ['ビットレート', t.bitrate ? `${t.bitrate} kbps` : '-'],
+        ['リリース年', t.year || '-'],
+        ['追加日', formatDate(t.dateAdded)],
+        ['ジャンル', t.genre],
+        ['ファイルサイズ', formatSize(t.size)]
+      ];
+      document.getElementById('detailBody').innerHTML = rows.map(([k, v]) => `
+        <div class="field-label">${escapeHtml(k)}</div>
+        <div class="field-val">${escapeHtml(String(v || '-'))}</div>
+      `).join('');
+
+      document.getElementById('detailModal').classList.add('open');
+    });
+
+    // JSON出力モーダル操作
+    document.getElementById('openExportBtn').addEventListener('click', () => {
+      if (!allTracks.length) return alert('出力する楽曲データがありません。');
+      updateExportEstimate();
+      document.getElementById('exportModal').classList.add('open');
+    });
+
+    dom.maxFileSizeMb.addEventListener('input', updateExportEstimate);
+    document.querySelectorAll('[data-preset-mb]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        dom.maxFileSizeMb.value = btn.dataset.presetMb;
+        updateExportEstimate();
+      });
+    });
+
+    document.getElementById('exportFolderBtn').addEventListener('click', async () => {
+      if (!window.showDirectoryPicker) {
+        return alert('このブラウザはフォルダ直接書き出しに非対応です。「ZIPで一括ダウンロード」をお使いください。');
+      }
+      try {
+        const dirHandle = await window.showDirectoryPicker();
+        const maxMb = getValidatedMaxMb();
+        setProgress(true, '最大サイズ指定でJSONを構築中...', 10);
+        const files = buildSplitJsonParts(allTracks, maxMb);
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          const fh = await dirHandle.getFileHandle(f.name, { create: true });
+          const w = await fh.createWritable();
+          await w.write(f.content);
+          await w.close();
+          setProgress(true, `書き出し中: ${f.name} (${formatSize(f.bytes)})`, Math.round(((i + 1) / files.length) * 100));
         }
-      });
+        setProgress(false);
+        document.getElementById('exportModal').classList.remove('open');
+        const summary = files.map(f => `${f.name}: ${formatSize(f.bytes)}`).join('\n');
+        alert(`出力が完了しました（全 ${files.length} ファイル）:\n\n${summary}`);
+      } catch (err) {
+        setProgress(false);
+        if (err.name !== 'AbortError') alert(`出力エラー: ${err.message}`);
+      }
+    });
 
-      // 詳細モーダル & iTunes Store API 連携
-      els.fetchItunesPreviewBtn.addEventListener('click', fetchItunesStoreMetadata);
-      els.closeModalBtn.addEventListener('click', closeTrackDetailModal);
-      els.closeModalFooterBtn.addEventListener('click', closeTrackDetailModal);
-      els.detailModal.addEventListener('click', (e) => {
-        if (e.target === els.detailModal) closeTrackDetailModal();
+    document.getElementById('exportZipBtn').addEventListener('click', async () => {
+      const maxMb = getValidatedMaxMb();
+      setProgress(true, '最大サイズ指定でJSONを構築中...', 20);
+      const files = buildSplitJsonParts(allTracks, maxMb);
+      const zip = new JSZip();
+      for (const f of files) zip.file(f.name, f.content);
+      const blob = await zip.generateAsync({ type: 'blob' }, (meta) => {
+        setProgress(true, `ZIP圧縮中... ${Math.round(meta.percent)}%`, Math.round(meta.percent));
       });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `itunes-library-max${maxMb}mb.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setProgress(false);
+      document.getElementById('exportModal').classList.remove('open');
+    });
 
-      els.copyTrackInfoBtn.addEventListener('click', () => {
-        if (!currentModalTrack) return;
-        const text = `${currentModalTrack.name} - ${currentModalTrack.artist} (${currentModalTrack.album})`;
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-        showToast('曲情報をクリップボードにコピーしました');
+    document.getElementById('exportEachBtn').addEventListener('click', () => {
+      const maxMb = getValidatedMaxMb();
+      const files = buildSplitJsonParts(allTracks, maxMb);
+      files.forEach((f, idx) => {
+        setTimeout(() => {
+          const blob = new Blob([f.content], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = f.name;
+          a.click();
+          URL.revokeObjectURL(url);
+        }, idx * 250);
       });
+      document.getElementById('exportModal').classList.remove('open');
+    });
 
-      // キャッシュクリア確認モーダル
-      els.openConfirmClearBtn.addEventListener('click', () => {
-        els.serverModal.classList.add('hidden');
-        els.confirmModal.classList.remove('hidden');
-      });
-      els.cancelClearBtn.addEventListener('click', () => els.confirmModal.classList.add('hidden'));
-      els.confirmClearBtn.addEventListener('click', async () => {
-        els.confirmModal.classList.add('hidden');
-        await clearLibraryFromDB();
-        allTracks = [];
-        allPlaylists = [];
-        filteredTracks = [];
-        els.libraryView.classList.add('hidden');
-        els.exportJsonBtn.classList.add('hidden');
-        els.welcomeView.classList.remove('hidden');
-        updateSourceStatus('none', '');
-        els.lastSyncedText.textContent = 'ローカルXML・JSON または 外部サーバーから同期可能';
-        showToast('ローカルキャッシュを削除しました');
-      });
+    // サーバー同期
+    document.getElementById('openSyncBtn').addEventListener('click', () => {
+      document.getElementById('syncUrlInput').value = syncConfig.syncUrl || '';
+      document.getElementById('bearerTokenInput').value = syncConfig.token || '';
+      document.getElementById('autoSyncCheckbox').checked = Boolean(syncConfig.autoSync);
+      document.getElementById('syncModal').classList.add('open');
+    });
 
-      // Escキーでモーダルを閉じる
-      document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-          closeTrackDetailModal();
-          els.serverModal.classList.add('hidden');
-          els.confirmModal.classList.add('hidden');
+    document.getElementById('saveSyncBtn').addEventListener('click', async () => {
+      syncConfig = {
+        syncUrl: document.getElementById('syncUrlInput').value.trim(),
+        token: document.getElementById('bearerTokenInput').value.trim(),
+        autoSync: document.getElementById('autoSyncCheckbox').checked
+      };
+      await setMeta('syncConfig', syncConfig);
+      document.getElementById('syncModal').classList.remove('open');
+      if (syncConfig.syncUrl) {
+        try {
+          const tracks = await syncFromServer(syncConfig);
+          await refreshUI(tracks);
+        } catch (err) {
+          alert(`同期エラー: ${err.message}`);
+          setProgress(false);
         }
+      }
+    });
+
+    document.getElementById('syncNowBtn').addEventListener('click', async () => {
+      if (!syncConfig.syncUrl) {
+        document.getElementById('openSyncBtn').click();
+        return;
+      }
+      try {
+        const tracks = await syncFromServer(syncConfig);
+        await refreshUI(tracks);
+      } catch (err) {
+        alert(`同期エラー: ${err.message}`);
+        setProgress(false);
+      }
+    });
+
+    document.getElementById('clearDbBtn').addEventListener('click', async () => {
+      if (!confirm('ローカルの IndexedDB データを消去しますか？')) return;
+      const db = await openDB();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction([STORE_TRACKS, STORE_META], 'readwrite');
+        tx.objectStore(STORE_TRACKS).clear();
+        tx.objectStore(STORE_META).clear();
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
       });
+      syncConfig = { syncUrl: '', token: '', autoSync: false };
+      await refreshUI([]);
+    });
 
-      // ----------------------------------------------------------------------
-      // 11. 起動時の初期化フロー（キャッシュ復元 ＋ 自動サーバー同期）
-      // ----------------------------------------------------------------------
-      window.addEventListener('DOMContentLoaded', async () => {
-        initTheme();
-        loadServerSettings();
-
-        // 1. まずIndexedDBのキャッシュがあれば即座に復元（オフラインでも即起動）
-        const cached = await loadLibraryFromDB();
-        if (cached && Array.isArray(cached.tracks) && cached.tracks.length > 0) {
-          renderLibraryDashboard(
-            cached.tracks,
-            cached.playlists || [],
-            cached.sourceType || 'cache',
-            cached.updatedAt || ''
-          );
-        }
-
-        // 2. 「起動時に自動同期」がONでURLが設定されていればバックグラウンドで最新を取得
-        if (serverSettings.autoSync && serverSettings.fetchUrl) {
-          await syncFromRemoteServer(Boolean(cached));
-        }
+    document.querySelectorAll('[data-close]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById(btn.dataset.close).classList.remove('open');
       });
+    });
+
+    // 初期化
+    (async function init() {
+      const savedCfg = await getMeta('syncConfig');
+      if (savedCfg) syncConfig = savedCfg;
+
+      const cached = await loadTracksFromDB();
+      await refreshUI(cached);
+
+      if (syncConfig.autoSync && syncConfig.syncUrl) {
+        try {
+          const tracks = await syncFromServer(syncConfig);
+          await refreshUI(tracks);
+        } catch (err) {
+          console.warn('自動同期スキップ:', err);
+          setProgress(false);
+        }
+      }
     })();
   </script>
 </body>
