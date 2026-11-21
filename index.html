@@ -2,8 +2,8 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>iTunes ライブラリ検索（ジャケ写＆30秒試聴復活・全ソート・JSON出力＆同期）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>iTunes ライブラリ検索（PC・スマホ対応 / ジャケ写＆30秒試聴 / 分割JSON）</title>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     :root {
@@ -16,31 +16,32 @@
       --accent: #6c8cff;
       --accent-hover: #5677f5;
       --success: #22c55e;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     body {
       margin: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
       background: var(--bg);
       color: var(--text);
       line-height: 1.45;
-      padding-bottom: 72px;
+      padding-bottom: calc(84px + var(--safe-bottom));
     }
     header {
       position: sticky;
       top: 0;
       z-index: 20;
-      background: rgba(15, 17, 23, 0.94);
+      background: rgba(15, 17, 23, 0.95);
       backdrop-filter: blur(10px);
       border-bottom: 1px solid var(--border);
-      padding: 10px 16px;
+      padding: 10px 14px;
       display: flex;
       flex-wrap: wrap;
-      gap: 10px;
+      gap: 8px;
       align-items: center;
       justify-content: space-between;
     }
-    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
     .badge {
       font-size: 11px;
       padding: 2px 8px;
@@ -55,27 +56,29 @@
       background: var(--surface-2);
       color: var(--text);
       border: 1px solid var(--border);
-      border-radius: 7px;
+      border-radius: 8px;
       padding: 7px 11px;
       font-size: 12px;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 5px;
+      min-height: 34px;
     }
     button:hover, .btn:hover { background: #2a3042; border-color: #424a63; }
     button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
     button.primary:hover { background: var(--accent-hover); }
-    button.chip { padding: 4px 9px; font-size: 11px; }
-    button.mini { padding: 4px 8px; font-size: 11px; border-radius: 5px; }
+    button.chip { padding: 5px 10px; font-size: 12px; }
+    button.mini { padding: 5px 9px; font-size: 12px; border-radius: 6px; min-height: 30px; }
 
-    main { max-width: 1680px; margin: 0 auto; padding: 14px 16px; }
+    main { max-width: 1680px; margin: 0 auto; padding: 12px 14px; }
 
     .dropzone {
       border: 2px dashed var(--border);
       background: var(--surface);
       border-radius: 10px;
-      padding: 14px;
+      padding: 12px;
       text-align: center;
       margin-bottom: 12px;
     }
@@ -107,17 +110,15 @@
       gap: 8px;
       margin-bottom: 10px;
     }
-    @media (max-width: 980px) {
-      .filters { grid-template-columns: 1fr 1fr; }
-    }
     input, select {
       width: 100%;
       background: var(--surface);
       color: var(--text);
       border: 1px solid var(--border);
-      border-radius: 7px;
+      border-radius: 8px;
       padding: 8px 10px;
       font-size: 13px;
+      min-height: 38px;
     }
     input:focus, select:focus { outline: none; border-color: var(--accent); }
 
@@ -126,12 +127,13 @@
       flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       margin-bottom: 8px;
       font-size: 12px;
       color: var(--muted);
     }
 
+    /* PC用テーブル */
     .table-wrap {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -163,9 +165,66 @@
     tbody tr:hover { background: rgba(108, 140, 255, 0.08); }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
 
+    /* スマホ用カードリスト（768px以下で表示） */
+    .mobile-list {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .track-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+    }
+    .track-card:active { background: var(--surface-2); }
+    .card-play {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      font-size: 13px;
+      padding: 0;
+    }
+    .card-main { flex: 1; min-width: 0; }
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-sub {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+    .card-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 5px;
+    }
+    .tag {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
     .more-wrap { text-align: center; padding: 14px; }
 
-    /* ミニ試聴バー */
+    /* 画面下部ミニ試聴バー */
     .player-bar {
       display: none;
       position: fixed;
@@ -173,36 +232,37 @@
       right: 0;
       bottom: 0;
       z-index: 30;
-      background: rgba(24, 27, 36, 0.96);
+      background: rgba(24, 27, 36, 0.97);
       backdrop-filter: blur(12px);
       border-top: 1px solid var(--border);
-      padding: 8px 16px;
+      padding: 8px 12px calc(8px + var(--safe-bottom));
       align-items: center;
-      gap: 12px;
+      gap: 10px;
     }
     .player-bar.active { display: flex; }
     .player-bar img {
-      width: 44px;
-      height: 44px;
+      width: 42px;
+      height: 42px;
       border-radius: 6px;
       object-fit: cover;
       background: #111;
       flex-shrink: 0;
     }
-    .player-meta { min-width: 160px; max-width: 280px; }
+    .player-meta { min-width: 120px; max-width: 260px; flex-shrink: 1; }
     .player-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .player-sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .player-bar audio { flex: 1; height: 34px; min-width: 180px; }
+    .player-bar audio { flex: 1; height: 34px; min-width: 140px; }
 
+    /* モーダル */
     .modal-backdrop {
       display: none;
       position: fixed;
       inset: 0;
       z-index: 50;
-      background: rgba(0, 0, 0, 0.72);
+      background: rgba(0, 0, 0, 0.74);
       align-items: center;
       justify-content: center;
-      padding: 16px;
+      padding: 14px;
     }
     .modal-backdrop.open { display: flex; }
     .modal {
@@ -210,15 +270,16 @@
       max-width: 620px;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 18px;
-      max-height: 90vh;
+      border-radius: 14px;
+      padding: 16px;
+      max-height: 88vh;
       overflow-y: auto;
     }
     .modal-head {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 8px;
       margin-bottom: 12px;
       border-bottom: 1px solid var(--border);
       padding-bottom: 8px;
@@ -226,18 +287,18 @@
     .modal-head h2 { margin: 0; font-size: 15px; }
     .artwork-panel {
       display: none;
-      gap: 14px;
+      gap: 12px;
       align-items: center;
       background: var(--surface-2);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 12px;
-      margin-bottom: 14px;
+      padding: 10px;
+      margin-bottom: 12px;
     }
     .artwork-panel.active { display: flex; }
     .artwork-panel img {
-      width: 112px;
-      height: 112px;
+      width: 96px;
+      height: 96px;
       border-radius: 8px;
       object-fit: cover;
       background: #111;
@@ -245,8 +306,8 @@
     }
     .field-grid {
       display: grid;
-      grid-template-columns: 125px 1fr;
-      gap: 7px 12px;
+      grid-template-columns: 115px 1fr;
+      gap: 7px 10px;
       font-size: 13px;
     }
     .field-label { color: var(--muted); }
@@ -254,7 +315,7 @@
     .form-row { margin-bottom: 12px; }
     .form-row label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
     .size-input-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .size-input-row input { max-width: 140px; text-align: right; font-variant-numeric: tabular-nums; }
+    .size-input-row input { max-width: 130px; text-align: right; font-variant-numeric: tabular-nums; }
     .estimate-box {
       background: var(--surface-2);
       border: 1px solid var(--border);
@@ -271,6 +332,45 @@
       gap: 8px;
       flex-wrap: wrap;
     }
+
+    /* スマホ・タブレット向けレスポンシブ調整 */
+    @media (max-width: 768px) {
+      header { padding: 8px 12px; }
+      .actions { width: 100%; }
+      .actions button, .actions .btn { flex: 1 1 auto; font-size: 11px; padding: 6px 8px; }
+      .dropzone { padding: 10px; }
+      .dropzone strong { font-size: 13px; }
+      .filters {
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+      .filters #searchInput { grid-column: 1 / -1; }
+      .filters #sortSelect { grid-column: 1 / 2; }
+      .filters #resetFiltersBtn { grid-column: 2 / 3; }
+      input, select { font-size: 16px; } /* iOS自動ズーム防止 */
+      .table-wrap { display: none; }
+      .mobile-list { display: flex; }
+
+      .player-bar {
+        flex-wrap: wrap;
+        gap: 6px 10px;
+      }
+      .player-meta { max-width: calc(100% - 110px); flex: 1; }
+      .player-bar audio { width: 100%; flex-basis: 100%; order: 3; height: 36px; }
+
+      .modal-backdrop {
+        align-items: flex-end;
+        padding: 0;
+      }
+      .modal {
+        border-radius: 16px 16px 0 0;
+        max-height: 90vh;
+        padding-bottom: calc(18px + var(--safe-bottom));
+      }
+      .artwork-panel { flex-direction: column; text-align: center; }
+      .artwork-panel img { width: 140px; height: 140px; }
+      .modal-foot button { flex: 1 1 100%; min-height: 42px; font-size: 14px; }
+    }
   </style>
 </head>
 <body>
@@ -283,7 +383,7 @@
       <label class="btn" for="xmlInput">XML / JSON 読込</label>
       <input type="file" id="xmlInput" accept=".xml,.json,text/xml,application/json" hidden />
       <button id="openExportBtn">JSON出力</button>
-      <button id="openSyncBtn">サーバー同期設定</button>
+      <button id="openSyncBtn">同期設定</button>
       <button id="syncNowBtn" class="primary">今すぐ同期</button>
       <button id="clearDbBtn">DB消去</button>
     </div>
@@ -291,8 +391,8 @@
 
   <main>
     <div id="dropzone" class="dropzone">
-      <strong>Library.xml または 出力済み JSON をドラッグ＆ドロップ</strong>
-      <p>曲名・アルバム名・曲番号（1/N）・アルバム番号（1/N）・アーティスト名・備考・再生時間・ビットレート・リリース年・追加日・ジャンル・ファイルサイズ（ジャケ写＆30秒試聴対応）</p>
+      <strong>Library.xml または 出力済み JSON を読込</strong>
+      <p>PC・スマホ対応 / 曲順・ディスク順 1/N 表記 / 全ソート / ジャケ写＆30秒試聴</p>
     </div>
 
     <div id="progressWrap" class="progress-wrap">
@@ -301,7 +401,7 @@
     </div>
 
     <div class="filters">
-      <input type="search" id="searchInput" placeholder="曲名・アルバム名・アーティスト名・備考・ジャンルで検索（スペースでAND）" />
+      <input type="search" id="searchInput" placeholder="曲名・アルバム・アーティスト・備考・ジャンル検索" />
       <select id="genreFilter"><option value="">全ジャンル</option></select>
       <select id="yearFilter"><option value="">全リリース年</option></select>
       <select id="sortSelect">
@@ -330,7 +430,7 @@
         <option value="size-asc">ファイルサイズ (小さい順 ▲)</option>
         <option value="size-desc">ファイルサイズ (大きい順 ▼)</option>
       </select>
-      <button id="resetFiltersBtn">クリア</button>
+      <button id="resetFiltersBtn">条件クリア</button>
     </div>
 
     <div class="stats-bar">
@@ -338,6 +438,7 @@
       <div id="syncMeta">未同期</div>
     </div>
 
+    <!-- PC用テーブル一覧 -->
     <div class="table-wrap">
       <table>
         <thead>
@@ -361,6 +462,9 @@
       </table>
     </div>
 
+    <!-- スマホ用カード一覧 -->
+    <div id="mobileList" class="mobile-list"></div>
+
     <div class="more-wrap">
       <button id="loadMoreBtn" style="display:none;">さらに表示（+200件）</button>
     </div>
@@ -373,11 +477,11 @@
       <div id="barTrackTitle" class="player-title">-</div>
       <div id="barTrackArtist" class="player-sub">-</div>
     </div>
-    <audio id="barAudio" controls></audio>
     <button id="closePlayerBtn" class="mini">停止</button>
+    <audio id="barAudio" controls playsinline></audio>
   </div>
 
-  <!-- 楽曲詳細モーダル（ジャケ写＆30秒試聴対応） -->
+  <!-- 楽曲詳細モーダル -->
   <div id="detailModal" class="modal-backdrop">
     <div class="modal">
       <div class="modal-head">
@@ -386,10 +490,10 @@
       </div>
       <div id="artworkPanel" class="artwork-panel">
         <img id="modalArtwork" alt="ジャケット画像" />
-        <div style="flex:1;min-width:0;">
+        <div style="flex:1;min-width:0;width:100%;">
           <div id="modalMatchTitle" style="font-weight:700;font-size:14px;"></div>
           <div id="modalMatchAlbum" style="font-size:12px;color:var(--muted);margin-bottom:8px;"></div>
-          <audio id="modalAudio" controls style="width:100%;height:34px;"></audio>
+          <audio id="modalAudio" controls playsinline style="width:100%;height:36px;"></audio>
         </div>
       </div>
       <div id="detailBody" class="field-grid"></div>
@@ -417,12 +521,12 @@
           <span>MB</span>
           <button type="button" class="chip" data-preset-mb="20">20 MB</button>
           <button type="button" class="chip" data-preset-mb="45">45 MB</button>
-          <button type="button" class="chip" data-preset-mb="90">90 MB (GitHub上限対策)</button>
+          <button type="button" class="chip" data-preset-mb="90">90 MB</button>
         </div>
       </div>
       <div id="exportEstimateBox" class="estimate-box">計算中...</div>
       <div class="modal-foot">
-        <button id="exportFolderBtn" class="primary">フォルダへ直接書き出し</button>
+        <button id="exportFolderBtn" class="primary">フォルダへ直接書き出し (PC)</button>
         <button id="exportZipBtn">ZIPで一括ダウンロード</button>
         <button id="exportEachBtn">個別ダウンロード</button>
       </div>
@@ -433,7 +537,7 @@
   <div id="syncModal" class="modal-backdrop">
     <div class="modal">
       <div class="modal-head">
-        <h2>サーバー同期設定（単一JSON / 分割manifest.json 両対応）</h2>
+        <h2>サーバー同期設定（manifest.json / library.json）</h2>
         <button data-close="syncModal">閉じる</button>
       </div>
       <div class="form-row">
@@ -445,7 +549,10 @@
         <input type="text" id="bearerTokenInput" placeholder="必要な場合のみ入力" />
       </div>
       <div class="form-row">
-        <label><input type="checkbox" id="autoSyncCheckbox" style="width:auto;" /> ページ起動時に自動でサーバー同期する</label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="autoSyncCheckbox" style="width:18px;height:18px;min-height:auto;" />
+          <span>ページ起動時に自動でサーバー同期する</span>
+        </label>
       </div>
       <div class="modal-foot">
         <button id="saveSyncBtn" class="primary">保存して同期</button>
@@ -455,7 +562,7 @@
   </div>
 
   <script>
-    const DB_NAME = 'iTunesLibraryMediaDB';
+    const DB_NAME = 'iTunesLibraryResponsiveDB';
     const DB_VERSION = 1;
     const STORE_TRACKS = 'tracks';
     const STORE_META = 'meta';
@@ -551,6 +658,7 @@
       resultCount: document.getElementById('resultCount'),
       syncMeta: document.getElementById('syncMeta'),
       trackTbody: document.getElementById('trackTbody'),
+      mobileList: document.getElementById('mobileList'),
       loadMoreBtn: document.getElementById('loadMoreBtn'),
       maxFileSizeMb: document.getElementById('maxFileSizeMb'),
       exportEstimateBox: document.getElementById('exportEstimateBox'),
@@ -650,7 +758,7 @@
       return obj;
     }
 
-    // --- iTunes Search API（ジャケ写＆30秒試聴取得） ---
+    // --- iTunes Search API（ジャケ写＆30秒試聴） ---
     const mediaCache = new Map();
 
     async function fetchItunesMedia(track) {
@@ -688,12 +796,76 @@
 
     function playInMiniBar(media, fallbackTrack) {
       if (!media || !media.previewUrl) return;
+      dom.modalAudio.pause();
       dom.barArtwork.src = media.artworkUrl || '';
       dom.barTrackTitle.textContent = media.trackName || fallbackTrack.name;
       dom.barTrackArtist.textContent = `${media.artistName || fallbackTrack.artist} — ${media.collectionName || fallbackTrack.album}`;
       dom.barAudio.src = media.previewUrl;
       dom.playerBar.classList.add('active');
       dom.barAudio.play().catch(() => {});
+    }
+
+    async function handlePreviewClick(idx, btnEl) {
+      const t = filteredTracks[idx];
+      if (!t) return;
+      const origText = btnEl.textContent;
+      btnEl.disabled = true;
+      btnEl.textContent = '…';
+      try {
+        const media = await fetchItunesMedia(t);
+        if (!media || !media.previewUrl) {
+          alert('試聴音源が見つかりませんでした。');
+        } else {
+          playInMiniBar(media, t);
+        }
+      } catch (err) {
+        alert(`試聴取得エラー: ${err.message}`);
+      } finally {
+        btnEl.disabled = false;
+        btnEl.textContent = origText;
+      }
+    }
+
+    function openTrackDetail(idx) {
+      const t = filteredTracks[idx];
+      if (!t) return;
+
+      currentDetailTrack = t;
+      document.getElementById('detailTitle').textContent = t.name || '無題';
+      dom.artworkPanel.classList.remove('active');
+      dom.modalAudio.pause();
+      dom.modalAudio.src = '';
+
+      const rows = [
+        ['曲名', t.name],
+        ['アルバム名', t.album],
+        ['曲番号', formatRatio(t.trackNo, t.trackCount)],
+        ['アルバム番号', formatRatio(t.discNo, t.discCount)],
+        ['アーティスト名', t.artist],
+        ['備考', t.comments],
+        ['再生時間', formatDuration(t.duration)],
+        ['ビットレート', t.bitrate ? `${t.bitrate} kbps` : '-'],
+        ['リリース年', t.year || '-'],
+        ['追加日', formatDate(t.dateAdded)],
+        ['ジャンル', t.genre],
+        ['ファイルサイズ', formatSize(t.size)]
+      ];
+      document.getElementById('detailBody').innerHTML = rows.map(([k, v]) => `
+        <div class="field-label">${escapeHtml(k)}</div>
+        <div class="field-val">${escapeHtml(String(v || '-'))}</div>
+      `).join('');
+
+      document.getElementById('detailModal').classList.add('open');
+
+      const cacheKey = `${t.name}::${t.artist}`;
+      if (mediaCache.has(cacheKey)) {
+        const cachedMedia = mediaCache.get(cacheKey);
+        dom.modalArtwork.src = cachedMedia.artworkUrl || '';
+        dom.modalMatchTitle.textContent = cachedMedia.trackName || t.name;
+        dom.modalMatchAlbum.textContent = `${cachedMedia.artistName || t.artist} / ${cachedMedia.collectionName || t.album}`;
+        dom.modalAudio.src = cachedMedia.previewUrl || '';
+        dom.artworkPanel.classList.add('active');
+      }
     }
 
     // --- ストリーミングXML解析 ---
@@ -1014,11 +1186,13 @@
       updateHeaderSortIndicators(field, dir);
       filteredTracks.sort((a, b) => compareTracks(a, b, field, dir));
 
-      renderTable();
+      renderLists();
     }
 
-    function renderTable() {
+    function renderLists() {
       const slice = filteredTracks.slice(0, displayLimit);
+
+      // PC用テーブル描画
       dom.trackTbody.innerHTML = slice.map((t, i) => `
         <tr data-idx="${i}">
           <td><button type="button" class="mini preview-btn" data-idx="${i}" title="30秒試聴">▶ 試聴</button></td>
@@ -1036,6 +1210,29 @@
           <td class="num">${formatSize(t.size)}</td>
         </tr>
       `).join('');
+
+      // スマホ用カードリスト描画
+      dom.mobileList.innerHTML = slice.map((t, i) => {
+        const trackStr = formatRatio(t.trackNo, t.trackCount);
+        const discStr = formatRatio(t.discNo, t.discCount);
+        return `
+          <div class="track-card" data-idx="${i}">
+            <button type="button" class="card-play preview-btn" data-idx="${i}" aria-label="試聴">▶</button>
+            <div class="card-main">
+              <div class="card-title">${escapeHtml(t.name || '無題')}</div>
+              <div class="card-sub">${escapeHtml(t.artist || '-')} — ${escapeHtml(t.album || '-')}</div>
+              <div class="card-tags">
+                ${trackStr !== '-' ? `<span class="tag">曲 ${trackStr}</span>` : ''}
+                ${discStr !== '-' ? `<span class="tag">盤 ${discStr}</span>` : ''}
+                <span class="tag">${formatDuration(t.duration)}</span>
+                ${t.year ? `<span class="tag">${t.year}</span>` : ''}
+                ${t.genre ? `<span class="tag">${escapeHtml(t.genre)}</span>` : ''}
+                ${t.bitrate ? `<span class="tag">${t.bitrate}kbps</span>` : ''}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
 
       dom.resultCount.textContent = `表示: ${slice.length.toLocaleString()} / 絞込: ${filteredTracks.length.toLocaleString()} / 総曲数: ${allTracks.length.toLocaleString()}`;
       dom.loadMoreBtn.style.display = filteredTracks.length > displayLimit ? 'inline-flex' : 'none';
@@ -1103,7 +1300,7 @@
 
     dom.loadMoreBtn.addEventListener('click', () => {
       displayLimit += 200;
-      renderTable();
+      renderLists();
     });
 
     document.querySelectorAll('th[data-sort]').forEach(th => {
@@ -1119,75 +1316,22 @@
       });
     });
 
-    // テーブル行クリック（試聴ボタン or 詳細モーダル）
-    dom.trackTbody.addEventListener('click', async (e) => {
-      const previewBtn = e.target.closest('.preview-btn');
-      if (previewBtn) {
-        e.stopPropagation();
-        const t = filteredTracks[Number(previewBtn.dataset.idx)];
-        if (!t) return;
-        const origText = previewBtn.textContent;
-        previewBtn.disabled = true;
-        previewBtn.textContent = '読込中...';
-        try {
-          const media = await fetchItunesMedia(t);
-          if (!media || !media.previewUrl) {
-            alert('試聴音源が見つかりませんでした。');
-          } else {
-            playInMiniBar(media, t);
-          }
-        } catch (err) {
-          alert(`試聴取得エラー: ${err.message}`);
-        } finally {
-          previewBtn.disabled = false;
-          previewBtn.textContent = origText;
+    // PCテーブル＆スマホカード共通クリック処理
+    function bindListInteractions(containerEl, rowSelector) {
+      containerEl.addEventListener('click', async (e) => {
+        const previewBtn = e.target.closest('.preview-btn');
+        if (previewBtn) {
+          e.stopPropagation();
+          await handlePreviewClick(Number(previewBtn.dataset.idx), previewBtn);
+          return;
         }
-        return;
-      }
-
-      const tr = e.target.closest('tr');
-      if (!tr) return;
-      const t = filteredTracks[Number(tr.dataset.idx)];
-      if (!t) return;
-
-      currentDetailTrack = t;
-      document.getElementById('detailTitle').textContent = t.name || '無題';
-      dom.artworkPanel.classList.remove('active');
-      dom.modalAudio.pause();
-      dom.modalAudio.src = '';
-
-      const rows = [
-        ['曲名', t.name],
-        ['アルバム名', t.album],
-        ['曲番号', formatRatio(t.trackNo, t.trackCount)],
-        ['アルバム番号', formatRatio(t.discNo, t.discCount)],
-        ['アーティスト名', t.artist],
-        ['備考', t.comments],
-        ['再生時間', formatDuration(t.duration)],
-        ['ビットレート', t.bitrate ? `${t.bitrate} kbps` : '-'],
-        ['リリース年', t.year || '-'],
-        ['追加日', formatDate(t.dateAdded)],
-        ['ジャンル', t.genre],
-        ['ファイルサイズ', formatSize(t.size)]
-      ];
-      document.getElementById('detailBody').innerHTML = rows.map(([k, v]) => `
-        <div class="field-label">${escapeHtml(k)}</div>
-        <div class="field-val">${escapeHtml(String(v || '-'))}</div>
-      `).join('');
-
-      document.getElementById('detailModal').classList.add('open');
-
-      // キャッシュ済みのジャケ写・試聴があれば即表示
-      const cacheKey = `${t.name}::${t.artist}`;
-      if (mediaCache.has(cacheKey)) {
-        const cachedMedia = mediaCache.get(cacheKey);
-        dom.modalArtwork.src = cachedMedia.artworkUrl || '';
-        dom.modalMatchTitle.textContent = cachedMedia.trackName || t.name;
-        dom.modalMatchAlbum.textContent = `${cachedMedia.artistName || t.artist} / ${cachedMedia.collectionName || t.album}`;
-        dom.modalAudio.src = cachedMedia.previewUrl || '';
-        dom.artworkPanel.classList.add('active');
-      }
-    });
+        const row = e.target.closest(rowSelector);
+        if (!row) return;
+        openTrackDetail(Number(row.dataset.idx));
+      });
+    }
+    bindListInteractions(dom.trackTbody, 'tr');
+    bindListInteractions(dom.mobileList, '.track-card');
 
     dom.fetchMediaBtn.addEventListener('click', async () => {
       if (!currentDetailTrack) return;
@@ -1199,6 +1343,7 @@
           alert('iTunes Store で該当曲が見つかりませんでした。');
           return;
         }
+        dom.barAudio.pause();
         dom.modalArtwork.src = media.artworkUrl || '';
         dom.modalMatchTitle.textContent = media.trackName;
         dom.modalMatchAlbum.textContent = `${media.artistName} / ${media.collectionName}`;
