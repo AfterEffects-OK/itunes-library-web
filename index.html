@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>iTunes ライブラリ検索（データ管理モーダル・スマホ省スクロール対応）</title>
+  <title>iTunes ライブラリ検索</title>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     :root {
@@ -230,31 +230,6 @@
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 8px;
       align-items: center;
-    }
-
-    .filter-collapsible {
-      width: 100%;
-      min-width: 0;
-    }
-
-    .filter-summary {
-      display: none;
-      list-style: none;
-      cursor: pointer;
-      user-select: none;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-sub);
-      padding: 6px 8px;
-      border-radius: var(--radius-sm);
-      background: var(--surface-2);
-      border: 1px solid var(--border);
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .filter-summary::-webkit-details-marker {
-      display: none;
     }
 
     .dropdown-row {
@@ -779,7 +754,7 @@
       }
     }
 
-    /* スマホ幅（768px以下）：省スクロール＆コンパクト化 */
+    /* スマホ幅（768px以下）：プルダウン常時表示＆省スクロール */
     @media screen and (max-width: 768px) {
       .app-header {
         position: static;
@@ -825,29 +800,23 @@
 
       input, select {
         font-size: 16px;
-        min-height: 38px;
-        padding: 6px 10px;
+        min-height: 36px;
+        padding: 5px 8px;
       }
 
       #resetFiltersBtn {
-        min-height: 38px;
+        min-height: 36px;
         padding: 0 10px;
         font-size: 12px;
       }
 
-      .filter-summary {
-        display: flex;
-      }
-
-      .filter-collapsible:not([open]) .dropdown-row {
-        display: none;
-      }
-
-      .filter-collapsible[open] .dropdown-row {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr);
+      .dropdown-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 6px;
-        margin-top: 6px;
+      }
+
+      .dropdown-row #sortSelect {
+        grid-column: 1 / -1;
       }
 
       .stats-bar {
@@ -863,7 +832,7 @@
         display: flex;
       }
 
-      /* ミニプレイヤーをスマホ1〜2段でコンパクト化 */
+      /* ミニプレイヤーをスマホでコンパクト化 */
       .player-bar {
         flex-wrap: wrap;
         gap: 6px 8px;
@@ -955,44 +924,38 @@
         <input type="search" id="searchInput" placeholder="曲名・アルバム・アーティスト・備考・ジャンルを検索" />
         <button type="button" id="resetFiltersBtn">クリア</button>
       </div>
-      <details class="filter-collapsible" id="filterDetails">
-        <summary class="filter-summary">
-          <span id="filterSummaryLabel">絞り込み・並び替え</span>
-          <span>▼</span>
-        </summary>
-        <div class="dropdown-row">
-          <select id="genreFilter" aria-label="ジャンル"><option value="">全ジャンル</option></select>
-          <select id="yearFilter" aria-label="リリース年"><option value="">全リリース年</option></select>
-          <select id="artistFilter" aria-label="アーティスト名"><option value="">全アーティスト名</option></select>
-          <select id="albumFilter" aria-label="アルバム名"><option value="">全アルバム名</option></select>
-          <select id="sortSelect" aria-label="並び替え">
-            <option value="name-asc">曲名 (昇順 ▲)</option>
-            <option value="name-desc">曲名 (降順 ▼)</option>
-            <option value="album-asc">アルバム名 (昇順 ▲)</option>
-            <option value="album-desc">アルバム名 (降順 ▼)</option>
-            <option value="track-asc">曲番号 (昇順 1→N ▲)</option>
-            <option value="track-desc">曲番号 (降順 N→1 ▼)</option>
-            <option value="disc-asc">アルバム番号/ディスク (昇順 1→N ▲)</option>
-            <option value="disc-desc">アルバム番号/ディスク (降順 N→1 ▼)</option>
-            <option value="artist-asc">アーティスト名 (昇順 ▲)</option>
-            <option value="artist-desc">アーティスト名 (降順 ▼)</option>
-            <option value="comments-asc">備考 (昇順 ▲)</option>
-            <option value="comments-desc">備考 (降順 ▼)</option>
-            <option value="duration-asc">再生時間 (短い順 ▲)</option>
-            <option value="duration-desc">再生時間 (長い順 ▼)</option>
-            <option value="bitrate-asc">ビットレート (低い順 ▲)</option>
-            <option value="bitrate-desc">ビットレート (高い順 ▼)</option>
-            <option value="year-asc">リリース年 (古い順 ▲)</option>
-            <option value="year-desc">リリース年 (新しい順 ▼)</option>
-            <option value="dateAdded-asc">追加日 (古い順 ▲)</option>
-            <option value="dateAdded-desc">追加日 (新しい順 ▼)</option>
-            <option value="genre-asc">ジャンル (昇順 ▲)</option>
-            <option value="genre-desc">ジャンル (降順 ▼)</option>
-            <option value="size-asc">ファイルサイズ (小さい順 ▲)</option>
-            <option value="size-desc">ファイルサイズ (大きい順 ▼)</option>
-          </select>
-        </div>
-      </details>
+      <div class="dropdown-row">
+        <select id="genreFilter" aria-label="ジャンル"><option value="">全ジャンル</option></select>
+        <select id="yearFilter" aria-label="リリース年"><option value="">全リリース年</option></select>
+        <select id="artistFilter" aria-label="アーティスト名"><option value="">全アーティスト名</option></select>
+        <select id="albumFilter" aria-label="アルバム名"><option value="">全アルバム名</option></select>
+        <select id="sortSelect" aria-label="並び替え">
+          <option value="name-asc">曲名 (昇順 ▲)</option>
+          <option value="name-desc">曲名 (降順 ▼)</option>
+          <option value="album-asc">アルバム名 (昇順 ▲)</option>
+          <option value="album-desc">アルバム名 (降順 ▼)</option>
+          <option value="track-asc">曲番号 (昇順 1→N ▲)</option>
+          <option value="track-desc">曲番号 (降順 N→1 ▼)</option>
+          <option value="disc-asc">アルバム番号/ディスク (昇順 1→N ▲)</option>
+          <option value="disc-desc">アルバム番号/ディスク (降順 N→1 ▼)</option>
+          <option value="artist-asc">アーティスト名 (昇順 ▲)</option>
+          <option value="artist-desc">アーティスト名 (降順 ▼)</option>
+          <option value="comments-asc">備考 (昇順 ▲)</option>
+          <option value="comments-desc">備考 (降順 ▼)</option>
+          <option value="duration-asc">再生時間 (短い順 ▲)</option>
+          <option value="duration-desc">再生時間 (長い順 ▼)</option>
+          <option value="bitrate-asc">ビットレート (低い順 ▲)</option>
+          <option value="bitrate-desc">ビットレート (高い順 ▼)</option>
+          <option value="year-asc">リリース年 (古い順 ▲)</option>
+          <option value="year-desc">リリース年 (新しい順 ▼)</option>
+          <option value="dateAdded-asc">追加日 (古い順 ▲)</option>
+          <option value="dateAdded-desc">追加日 (新しい順 ▼)</option>
+          <option value="genre-asc">ジャンル (昇順 ▲)</option>
+          <option value="genre-desc">ジャンル (降順 ▼)</option>
+          <option value="size-asc">ファイルサイズ (小さい順 ▲)</option>
+          <option value="size-desc">ファイルサイズ (大きい順 ▼)</option>
+        </select>
+      </div>
     </div>
 
     <div class="stats-bar">
@@ -1310,8 +1273,6 @@
       progressText: document.getElementById('progressText'),
       progressFill: document.getElementById('progressFill'),
       searchInput: document.getElementById('searchInput'),
-      filterDetails: document.getElementById('filterDetails'),
-      filterSummaryLabel: document.getElementById('filterSummaryLabel'),
       genreFilter: document.getElementById('genreFilter'),
       yearFilter: document.getElementById('yearFilter'),
       artistFilter: document.getElementById('artistFilter'),
@@ -1338,19 +1299,6 @@
       modalAudio: document.getElementById('modalAudio'),
       fetchMediaBtn: document.getElementById('fetchMediaBtn'),
     };
-
-    function updateFilterSummaryLabel() {
-      const activeCount = [
-        dom.genreFilter.value,
-        dom.yearFilter.value,
-        dom.artistFilter.value,
-        dom.albumFilter.value
-      ].filter(Boolean).length;
-      const sortLabel = dom.sortSelect.options[dom.sortSelect.selectedIndex]?.text || '';
-      dom.filterSummaryLabel.textContent = activeCount > 0
-        ? `絞り込み (${activeCount}件適用中) / ${sortLabel}`
-        : `絞り込み・並び替え (${sortLabel})`;
-    }
 
     function setProgress(active, text = '', pct = 0) {
       dom.progressWrap.classList.toggle('active', active);
@@ -1974,7 +1922,6 @@
       const selAlbum = dom.albumFilter.value;
 
       updateFacetedDropdowns(terms, selGenre, selYear, selArtist, selAlbum);
-      updateFilterSummaryLabel();
 
       const hasTerms = terms.length > 0;
       const nextFiltered = [];
