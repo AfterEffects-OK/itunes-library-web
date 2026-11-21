@@ -21,6 +21,7 @@
       --accent-soft: rgba(110, 142, 255, 0.16);
       --success: #34d399;
       --success-soft: rgba(52, 211, 153, 0.14);
+      --danger-soft: rgba(248, 113, 113, 0.16);
       --safe-top: env(safe-area-inset-top, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
       --radius-lg: 14px;
@@ -169,6 +170,17 @@
       border-radius: 7px;
       min-height: 30px;
       font-weight: 600;
+    }
+
+    button.is-stopping {
+      background: var(--danger-soft);
+      border-color: rgba(248, 113, 113, 0.5);
+      color: #fca5a5;
+    }
+
+    button.is-stopping:hover {
+      background: rgba(248, 113, 113, 0.25);
+      border-color: rgba(248, 113, 113, 0.75);
     }
 
     .app-main {
@@ -428,6 +440,12 @@
       background: var(--accent-soft);
       border-color: rgba(110, 142, 255, 0.4);
       color: #c2d2ff;
+    }
+
+    .card-play.is-stopping {
+      background: var(--danger-soft);
+      border-color: rgba(248, 113, 113, 0.55);
+      color: #fca5a5;
     }
 
     .card-main {
@@ -1038,7 +1056,7 @@
       <div id="barTrackTitle" class="player-title">-</div>
       <div id="barTrackArtist" class="player-sub">-</div>
     </div>
-    <button type="button" id="closePlayerBtn" class="mini">停止</button>
+    <button type="button" id="closePlayerBtn" class="mini is-stopping">停止</button>
     <audio id="barAudio" controls playsinline></audio>
   </div>
 
@@ -1450,6 +1468,14 @@
       return media;
     }
 
+    function stopMiniPlayer() {
+      dom.barAudio.pause();
+      dom.barAudio.src = '';
+      activePlayingId = null;
+      dom.playerBar.classList.remove('active');
+      renderLists();
+    }
+
     function playInMiniBar(media, fallbackTrack) {
       if (!media || !media.previewUrl) return;
       dom.modalAudio.pause();
@@ -1466,6 +1492,13 @@
     async function handlePreviewClick(idx, btnEl) {
       const t = filteredTracks[idx];
       if (!t) return;
+
+      // 再生中の曲の停止ボタンを押した場合は即停止
+      if (activePlayingId === t.id) {
+        stopMiniPlayer();
+        return;
+      }
+
       const origText = btnEl.textContent;
       btnEl.disabled = true;
       btnEl.textContent = '…';
@@ -1480,7 +1513,9 @@
         alert(`試聴取得エラー: ${err.message}`);
       } finally {
         btnEl.disabled = false;
-        btnEl.textContent = origText;
+        if (activePlayingId !== t.id) {
+          btnEl.textContent = origText;
+        }
       }
     }
 
@@ -1966,7 +2001,7 @@
         const escGenre = escapeHtml(t.genre);
 
         tableHtml[i] = `<tr data-idx="${i}" class="${isPlaying ? 'playing-row' : ''}">` +
-          `<td><button type="button" class="mini preview-btn" data-idx="${i}" title="30秒試聴">${isPlaying ? '♪ 再生中' : '▶ 試聴'}</button></td>` +
+          `<td><button type="button" class="mini preview-btn ${isPlaying ? 'is-stopping' : ''}" data-idx="${i}" title="${isPlaying ? '試聴を停止' : '30秒試聴'}">${isPlaying ? '■ 停止' : '▶ 試聴'}</button></td>` +
           `<td class="cell-main" title="${escName}">${escName}</td>` +
           `<td class="cell-sub" title="${escAlbum}">${escAlbum}</td>` +
           `<td class="num">${trackStr}</td>` +
@@ -1982,7 +2017,7 @@
           `</tr>`;
 
         mobileHtml[i] = `<div class="track-card ${isPlaying ? 'playing-card' : ''}" data-idx="${i}">` +
-          `<button type="button" class="card-play preview-btn" data-idx="${i}" aria-label="試聴">${isPlaying ? '♪' : '▶'}</button>` +
+          `<button type="button" class="card-play preview-btn ${isPlaying ? 'is-stopping' : ''}" data-idx="${i}" aria-label="${isPlaying ? '停止' : '試聴'}">${isPlaying ? '■' : '▶'}</button>` +
           `<div class="card-main">` +
           `<div class="card-title">${escapeHtml(t.name || '無題')}</div>` +
           `<div class="card-sub">${escapeHtml(t.artist || '-')} · ${escapeHtml(t.album || '-')}</div>` +
@@ -2146,13 +2181,8 @@
       }
     });
 
-    dom.closePlayerBtn.addEventListener('click', () => {
-      dom.barAudio.pause();
-      dom.barAudio.src = '';
-      activePlayingId = null;
-      dom.playerBar.classList.remove('active');
-      renderLists();
-    });
+    dom.closePlayerBtn.addEventListener('click', stopMiniPlayer);
+    dom.barAudio.addEventListener('ended', stopMiniPlayer);
 
     // JSON出力
     document.getElementById('openExportBtn').addEventListener('click', () => {
