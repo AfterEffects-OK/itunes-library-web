@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>iTunes ライブラリ検索（全ソート対応・曲順/ディスク順 1/N表記）</title>
+  <title>iTunes ライブラリ検索（ジャケ写＆30秒試聴復活・全ソート・JSON出力＆同期）</title>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     :root {
@@ -24,6 +24,7 @@
       background: var(--bg);
       color: var(--text);
       line-height: 1.45;
+      padding-bottom: 72px;
     }
     header {
       position: sticky;
@@ -66,8 +67,9 @@
     button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
     button.primary:hover { background: var(--accent-hover); }
     button.chip { padding: 4px 9px; font-size: 11px; }
+    button.mini { padding: 4px 8px; font-size: 11px; border-radius: 5px; }
 
-    main { max-width: 1620px; margin: 0 auto; padding: 14px 16px; }
+    main { max-width: 1680px; margin: 0 auto; padding: 14px 16px; }
 
     .dropzone {
       border: 2px dashed var(--border);
@@ -154,6 +156,7 @@
       user-select: none;
     }
     th:hover { color: var(--text); }
+    th.no-sort { cursor: default; }
     th.active-sort { color: var(--accent); }
     .sort-mark { font-size: 10px; margin-left: 4px; opacity: 0.85; }
     tbody tr { cursor: pointer; }
@@ -161,6 +164,35 @@
     .num { text-align: right; font-variant-numeric: tabular-nums; }
 
     .more-wrap { text-align: center; padding: 14px; }
+
+    /* ミニ試聴バー */
+    .player-bar {
+      display: none;
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 30;
+      background: rgba(24, 27, 36, 0.96);
+      backdrop-filter: blur(12px);
+      border-top: 1px solid var(--border);
+      padding: 8px 16px;
+      align-items: center;
+      gap: 12px;
+    }
+    .player-bar.active { display: flex; }
+    .player-bar img {
+      width: 44px;
+      height: 44px;
+      border-radius: 6px;
+      object-fit: cover;
+      background: #111;
+      flex-shrink: 0;
+    }
+    .player-meta { min-width: 160px; max-width: 280px; }
+    .player-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .player-sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .player-bar audio { flex: 1; height: 34px; min-width: 180px; }
 
     .modal-backdrop {
       display: none;
@@ -175,7 +207,7 @@
     .modal-backdrop.open { display: flex; }
     .modal {
       width: 100%;
-      max-width: 600px;
+      max-width: 620px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
@@ -192,6 +224,25 @@
       padding-bottom: 8px;
     }
     .modal-head h2 { margin: 0; font-size: 15px; }
+    .artwork-panel {
+      display: none;
+      gap: 14px;
+      align-items: center;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 14px;
+    }
+    .artwork-panel.active { display: flex; }
+    .artwork-panel img {
+      width: 112px;
+      height: 112px;
+      border-radius: 8px;
+      object-fit: cover;
+      background: #111;
+      flex-shrink: 0;
+    }
     .field-grid {
       display: grid;
       grid-template-columns: 125px 1fr;
@@ -240,8 +291,8 @@
 
   <main>
     <div id="dropzone" class="dropzone">
-      <strong>Library.xml（350MB超対応）または 出力済み JSON をドラッグ＆ドロップ</strong>
-      <p>曲名・アルバム名・曲番号（1/N）・アルバム番号（1/N）・アーティスト名・備考・再生時間・ビットレート・リリース年・追加日・ジャンル・ファイルサイズ（全ソート対応）</p>
+      <strong>Library.xml または 出力済み JSON をドラッグ＆ドロップ</strong>
+      <p>曲名・アルバム名・曲番号（1/N）・アルバム番号（1/N）・アーティスト名・備考・再生時間・ビットレート・リリース年・追加日・ジャンル・ファイルサイズ（ジャケ写＆30秒試聴対応）</p>
     </div>
 
     <div id="progressWrap" class="progress-wrap">
@@ -291,6 +342,7 @@
       <table>
         <thead>
           <tr>
+            <th class="no-sort">試聴</th>
             <th data-sort="name">曲名<span class="sort-mark"></span></th>
             <th data-sort="album">アルバム名<span class="sort-mark"></span></th>
             <th data-sort="track" class="num">曲番号<span class="sort-mark"></span></th>
@@ -314,15 +366,35 @@
     </div>
   </main>
 
-  <!-- 楽曲詳細モーダル -->
+  <!-- 画面下部ミニ試聴バー -->
+  <div id="playerBar" class="player-bar">
+    <img id="barArtwork" alt="Artwork" />
+    <div class="player-meta">
+      <div id="barTrackTitle" class="player-title">-</div>
+      <div id="barTrackArtist" class="player-sub">-</div>
+    </div>
+    <audio id="barAudio" controls></audio>
+    <button id="closePlayerBtn" class="mini">停止</button>
+  </div>
+
+  <!-- 楽曲詳細モーダル（ジャケ写＆30秒試聴対応） -->
   <div id="detailModal" class="modal-backdrop">
     <div class="modal">
       <div class="modal-head">
         <h2 id="detailTitle">楽曲詳細</h2>
         <button data-close="detailModal">閉じる</button>
       </div>
+      <div id="artworkPanel" class="artwork-panel">
+        <img id="modalArtwork" alt="ジャケット画像" />
+        <div style="flex:1;min-width:0;">
+          <div id="modalMatchTitle" style="font-weight:700;font-size:14px;"></div>
+          <div id="modalMatchAlbum" style="font-size:12px;color:var(--muted);margin-bottom:8px;"></div>
+          <audio id="modalAudio" controls style="width:100%;height:34px;"></audio>
+        </div>
+      </div>
       <div id="detailBody" class="field-grid"></div>
       <div class="modal-foot">
+        <button id="fetchMediaBtn" class="primary">ジャケ写・30秒試聴を取得</button>
         <button data-close="detailModal">閉じる</button>
       </div>
     </div>
@@ -383,7 +455,7 @@
   </div>
 
   <script>
-    const DB_NAME = 'iTunesLibrarySort1NDB';
+    const DB_NAME = 'iTunesLibraryMediaDB';
     const DB_VERSION = 1;
     const STORE_TRACKS = 'tracks';
     const STORE_META = 'meta';
@@ -462,6 +534,7 @@
     let filteredTracks = [];
     let displayLimit = 200;
     let syncConfig = { syncUrl: '', token: '', autoSync: false };
+    let currentDetailTrack = null;
 
     const dom = {
       dbStatus: document.getElementById('dbStatus'),
@@ -481,6 +554,18 @@
       loadMoreBtn: document.getElementById('loadMoreBtn'),
       maxFileSizeMb: document.getElementById('maxFileSizeMb'),
       exportEstimateBox: document.getElementById('exportEstimateBox'),
+      playerBar: document.getElementById('playerBar'),
+      barArtwork: document.getElementById('barArtwork'),
+      barTrackTitle: document.getElementById('barTrackTitle'),
+      barTrackArtist: document.getElementById('barTrackArtist'),
+      barAudio: document.getElementById('barAudio'),
+      closePlayerBtn: document.getElementById('closePlayerBtn'),
+      artworkPanel: document.getElementById('artworkPanel'),
+      modalArtwork: document.getElementById('modalArtwork'),
+      modalMatchTitle: document.getElementById('modalMatchTitle'),
+      modalMatchAlbum: document.getElementById('modalMatchAlbum'),
+      modalAudio: document.getElementById('modalAudio'),
+      fetchMediaBtn: document.getElementById('fetchMediaBtn'),
     };
 
     function setProgress(active, text = '', pct = 0) {
@@ -563,6 +648,52 @@
       if (t.genre) obj.g = t.genre;
       if (t.size) obj.sz = t.size;
       return obj;
+    }
+
+    // --- iTunes Search API（ジャケ写＆30秒試聴取得） ---
+    const mediaCache = new Map();
+
+    async function fetchItunesMedia(track) {
+      const cacheKey = `${track.name}::${track.artist}`;
+      if (mediaCache.has(cacheKey)) return mediaCache.get(cacheKey);
+
+      const queryWithArtist = `${track.name} ${track.artist}`.trim();
+      const searchOnce = async (term) => {
+        const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&entity=song&limit=5&country=JP`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        return data.results || [];
+      };
+
+      let results = await searchOnce(queryWithArtist);
+      if (!results.length && track.name) {
+        results = await searchOnce(track.name);
+      }
+
+      const best = results.find(r => r.previewUrl) || results[0] || null;
+      if (!best) return null;
+
+      const highResArt = (best.artworkUrl100 || best.artworkUrl60 || '').replace(/100x100bb/i, '600x600bb');
+      const media = {
+        artworkUrl: highResArt,
+        previewUrl: best.previewUrl || '',
+        trackName: best.trackName || track.name,
+        artistName: best.artistName || track.artist,
+        collectionName: best.collectionName || track.album
+      };
+      mediaCache.set(cacheKey, media);
+      return media;
+    }
+
+    function playInMiniBar(media, fallbackTrack) {
+      if (!media || !media.previewUrl) return;
+      dom.barArtwork.src = media.artworkUrl || '';
+      dom.barTrackTitle.textContent = media.trackName || fallbackTrack.name;
+      dom.barTrackArtist.textContent = `${media.artistName || fallbackTrack.artist} — ${media.collectionName || fallbackTrack.album}`;
+      dom.barAudio.src = media.previewUrl;
+      dom.playerBar.classList.add('active');
+      dom.barAudio.play().catch(() => {});
     }
 
     // --- ストリーミングXML解析 ---
@@ -799,19 +930,17 @@
       return merged;
     }
 
-    // --- iTunes準拠ソート比較 ---
+    // --- ソート比較 ---
     function compareTracks(a, b, field, dir) {
       const mult = dir === 'desc' ? -1 : 1;
 
       if (field === 'track') {
-        // 曲順: 曲番号 → 総曲数 → 曲名
         if (a.trackNo !== b.trackNo) return (a.trackNo - b.trackNo) * mult;
         if (a.trackCount !== b.trackCount) return (a.trackCount - b.trackCount) * mult;
         return String(a.name || '').localeCompare(String(b.name || ''), 'ja') * mult;
       }
 
       if (field === 'disc') {
-        // アルバム番号（ディスク順）: ディスク番号 → 総ディスク数 → 曲番号 → 曲名
         if (a.discNo !== b.discNo) return (a.discNo - b.discNo) * mult;
         if (a.discCount !== b.discCount) return (a.discCount - b.discCount) * mult;
         if (a.trackNo !== b.trackNo) return (a.trackNo - b.trackNo) * mult;
@@ -892,6 +1021,7 @@
       const slice = filteredTracks.slice(0, displayLimit);
       dom.trackTbody.innerHTML = slice.map((t, i) => `
         <tr data-idx="${i}">
+          <td><button type="button" class="mini preview-btn" data-idx="${i}" title="30秒試聴">▶ 試聴</button></td>
           <td title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</td>
           <td title="${escapeHtml(t.album)}">${escapeHtml(t.album)}</td>
           <td class="num">${formatRatio(t.trackNo, t.trackCount)}</td>
@@ -989,13 +1119,43 @@
       });
     });
 
-    dom.trackTbody.addEventListener('click', (e) => {
+    // テーブル行クリック（試聴ボタン or 詳細モーダル）
+    dom.trackTbody.addEventListener('click', async (e) => {
+      const previewBtn = e.target.closest('.preview-btn');
+      if (previewBtn) {
+        e.stopPropagation();
+        const t = filteredTracks[Number(previewBtn.dataset.idx)];
+        if (!t) return;
+        const origText = previewBtn.textContent;
+        previewBtn.disabled = true;
+        previewBtn.textContent = '読込中...';
+        try {
+          const media = await fetchItunesMedia(t);
+          if (!media || !media.previewUrl) {
+            alert('試聴音源が見つかりませんでした。');
+          } else {
+            playInMiniBar(media, t);
+          }
+        } catch (err) {
+          alert(`試聴取得エラー: ${err.message}`);
+        } finally {
+          previewBtn.disabled = false;
+          previewBtn.textContent = origText;
+        }
+        return;
+      }
+
       const tr = e.target.closest('tr');
       if (!tr) return;
       const t = filteredTracks[Number(tr.dataset.idx)];
       if (!t) return;
 
+      currentDetailTrack = t;
       document.getElementById('detailTitle').textContent = t.name || '無題';
+      dom.artworkPanel.classList.remove('active');
+      dom.modalAudio.pause();
+      dom.modalAudio.src = '';
+
       const rows = [
         ['曲名', t.name],
         ['アルバム名', t.album],
@@ -1016,8 +1176,52 @@
       `).join('');
 
       document.getElementById('detailModal').classList.add('open');
+
+      // キャッシュ済みのジャケ写・試聴があれば即表示
+      const cacheKey = `${t.name}::${t.artist}`;
+      if (mediaCache.has(cacheKey)) {
+        const cachedMedia = mediaCache.get(cacheKey);
+        dom.modalArtwork.src = cachedMedia.artworkUrl || '';
+        dom.modalMatchTitle.textContent = cachedMedia.trackName || t.name;
+        dom.modalMatchAlbum.textContent = `${cachedMedia.artistName || t.artist} / ${cachedMedia.collectionName || t.album}`;
+        dom.modalAudio.src = cachedMedia.previewUrl || '';
+        dom.artworkPanel.classList.add('active');
+      }
     });
 
+    dom.fetchMediaBtn.addEventListener('click', async () => {
+      if (!currentDetailTrack) return;
+      dom.fetchMediaBtn.disabled = true;
+      dom.fetchMediaBtn.textContent = '取得中...';
+      try {
+        const media = await fetchItunesMedia(currentDetailTrack);
+        if (!media) {
+          alert('iTunes Store で該当曲が見つかりませんでした。');
+          return;
+        }
+        dom.modalArtwork.src = media.artworkUrl || '';
+        dom.modalMatchTitle.textContent = media.trackName;
+        dom.modalMatchAlbum.textContent = `${media.artistName} / ${media.collectionName}`;
+        dom.modalAudio.src = media.previewUrl || '';
+        dom.artworkPanel.classList.add('active');
+        if (media.previewUrl) {
+          dom.modalAudio.play().catch(() => {});
+        }
+      } catch (err) {
+        alert(`取得エラー: ${err.message}`);
+      } finally {
+        dom.fetchMediaBtn.disabled = false;
+        dom.fetchMediaBtn.textContent = 'ジャケ写・30秒試聴を取得';
+      }
+    });
+
+    dom.closePlayerBtn.addEventListener('click', () => {
+      dom.barAudio.pause();
+      dom.barAudio.src = '';
+      dom.playerBar.classList.remove('active');
+    });
+
+    // JSON出力
     document.getElementById('openExportBtn').addEventListener('click', () => {
       if (!allTracks.length) return alert('出力する楽曲データがありません。');
       updateExportEstimate();
@@ -1095,6 +1299,7 @@
       document.getElementById('exportModal').classList.remove('open');
     });
 
+    // サーバー同期
     document.getElementById('openSyncBtn').addEventListener('click', () => {
       document.getElementById('syncUrlInput').value = syncConfig.syncUrl || '';
       document.getElementById('bearerTokenInput').value = syncConfig.token || '';
@@ -1152,6 +1357,7 @@
     document.querySelectorAll('[data-close]').forEach(btn => {
       btn.addEventListener('click', () => {
         document.getElementById(btn.dataset.close).classList.remove('open');
+        if (btn.dataset.close === 'detailModal') dom.modalAudio.pause();
       });
     });
 
