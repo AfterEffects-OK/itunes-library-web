@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>iTunes ライブラリ検索（連動プルダウン・アルバム/アーティスト絞り込み対応）</title>
+  <title>iTunes ライブラリ検索（URLローカル保存・連動プルダウン・スマホ対応）</title>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     :root {
@@ -326,6 +326,7 @@
     .field-val { word-break: break-all; }
     .form-row { margin-bottom: 12px; }
     .form-row label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .help-text { font-size: 11px; color: var(--muted); margin-top: 4px; }
     .size-input-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .size-input-row input { max-width: 130px; text-align: right; font-variant-numeric: tabular-nums; }
     .estimate-box {
@@ -395,7 +396,7 @@
   <main>
     <div id="dropzone" class="dropzone">
       <strong>Library.xml または 出力済み JSON を読込</strong>
-      <p>フリーワード連動絞り込み（ジャンル・リリース年・アーティスト名・アルバム名） / ジャケ写＆30秒試聴 / 分割JSON</p>
+      <p>JSONファイル URL はブラウザ（localStorage）に自動保存 / 連動プルダウン / ジャケ写＆30秒試聴</p>
     </div>
 
     <div id="progressWrap" class="progress-wrap">
@@ -546,12 +547,13 @@
   <div id="syncModal" class="modal-backdrop">
     <div class="modal">
       <div class="modal-head">
-        <h2>サーバー同期設定（manifest.json / library.json）</h2>
+        <h2>サーバー同期設定（ブラウザ保存）</h2>
         <button data-close="syncModal">閉じる</button>
       </div>
       <div class="form-row">
         <label for="syncUrlInput">JSONファイル URL（manifest.json または library.json）</label>
         <input type="url" id="syncUrlInput" placeholder="https://example.com/manifest.json または ./manifest.json" />
+        <div class="help-text">このブラウザの localStorage に保存されます。</div>
       </div>
       <div class="form-row">
         <label for="bearerTokenInput">Authorization Bearer トークン（任意）</label>
@@ -564,6 +566,7 @@
         </label>
       </div>
       <div class="modal-foot">
+        <button id="clearSavedUrlBtn">URL設定をクリア</button>
         <button id="saveSyncBtn" class="primary">保存して同期</button>
         <button data-close="syncModal">キャンセル</button>
       </div>
@@ -575,6 +578,34 @@
     const DB_VERSION = 1;
     const STORE_TRACKS = 'tracks';
     const STORE_META = 'meta';
+    const STORAGE_SYNC_CONFIG_KEY = 'itunes_library_sync_config_v1';
+
+    function loadSyncConfigFromStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_SYNC_CONFIG_KEY);
+        if (!raw) return { syncUrl: '', token: '', autoSync: false };
+        const parsed = JSON.parse(raw);
+        return {
+          syncUrl: typeof parsed.syncUrl === 'string' ? parsed.syncUrl : '',
+          token: typeof parsed.token === 'string' ? parsed.token : '',
+          autoSync: Boolean(parsed.autoSync)
+        };
+      } catch (e) {
+        return { syncUrl: '', token: '', autoSync: false };
+      }
+    }
+
+    function saveSyncConfigToStorage(cfg) {
+      try {
+        localStorage.setItem(STORAGE_SYNC_CONFIG_KEY, JSON.stringify({
+          syncUrl: cfg.syncUrl || '',
+          token: cfg.token || '',
+          autoSync: Boolean(cfg.autoSync)
+        }));
+      } catch (e) {
+        console.warn('localStorage 保存失敗:', e);
+      }
+    }
 
     function openDB() {
       return new Promise((resolve, reject) => {
@@ -649,7 +680,7 @@
     let allTracks = [];
     let filteredTracks = [];
     let displayLimit = 200;
-    let syncConfig = { syncUrl: '', token: '', autoSync: false };
+    let syncConfig = loadSyncConfigFromStorage();
     let currentDetailTrack = null;
 
     const dom = {
@@ -1176,7 +1207,6 @@
         html += `<option value="${escapeHtml(strVal)}">${escapeHtml(label)}</option>`;
       }
 
-      // 現在選択中の値が候補外になった場合も保持できるように追加
       if (!hasCurrent && currentVal !== '') {
         html += `<option value="${escapeHtml(currentVal)}">${escapeHtml(currentVal)} (0)</option>`;
       }
@@ -1201,7 +1231,6 @@
         const okArtist = !selArtist || t.artist === selArtist;
         const okAlbum = !selAlbum || t.album === selAlbum;
 
-        // 自身以外の3条件＋フリーワードに一致する曲から各候補を集計
         if (okYear && okArtist && okAlbum && t.genre) {
           genreCounts.set(t.genre, (genreCounts.get(t.genre) || 0) + 1);
         }
@@ -1258,10 +1287,8 @@
       const selArtist = dom.artistFilter.value;
       const selAlbum = dom.albumFilter.value;
 
-      // 連動プルダウンを更新
       updateFacetedDropdowns(terms, selGenre, selYear, selArtist, selAlbum);
 
-      // 一覧表示用の絞り込み
       filteredTracks = allTracks.filter(t => {
         if (selGenre && t.genre !== selGenre) return false;
         if (selYear && t.year !== selYear) return false;
@@ -1332,7 +1359,13 @@
       dom.dbStatus.textContent = `登録済: ${allTracks.length.toLocaleString()} 曲`;
       dom.dbStatus.classList.toggle('ok', allTracks.length > 0);
       const lastSync = await getMeta('lastSyncAt');
-      dom.syncMeta.textContent = lastSync ? `最終同期: ${new Date(lastSync).toLocaleString('ja-JP')}` : 'ローカルキャッシュ利用中';
+      if (lastSync) {
+        dom.syncMeta.textContent = `最終同期: ${new Date(lastSync).toLocaleString('ja-JP')}`;
+      } else if (syncConfig.syncUrl) {
+        dom.syncMeta.textContent = `保存済URL: ${syncConfig.syncUrl}`;
+      } else {
+        dom.syncMeta.textContent = '未同期';
+      }
     }
 
     // --- イベント登録 ---
@@ -1542,12 +1575,22 @@
       document.getElementById('exportModal').classList.remove('open');
     });
 
-    // サーバー同期
+    // サーバー同期設定（localStorage保存）
     document.getElementById('openSyncBtn').addEventListener('click', () => {
+      syncConfig = loadSyncConfigFromStorage();
       document.getElementById('syncUrlInput').value = syncConfig.syncUrl || '';
       document.getElementById('bearerTokenInput').value = syncConfig.token || '';
       document.getElementById('autoSyncCheckbox').checked = Boolean(syncConfig.autoSync);
       document.getElementById('syncModal').classList.add('open');
+    });
+
+    document.getElementById('clearSavedUrlBtn').addEventListener('click', () => {
+      syncConfig = { syncUrl: '', token: '', autoSync: false };
+      saveSyncConfigToStorage(syncConfig);
+      document.getElementById('syncUrlInput').value = '';
+      document.getElementById('bearerTokenInput').value = '';
+      document.getElementById('autoSyncCheckbox').checked = false;
+      dom.syncMeta.textContent = '未同期';
     });
 
     document.getElementById('saveSyncBtn').addEventListener('click', async () => {
@@ -1556,7 +1599,7 @@
         token: document.getElementById('bearerTokenInput').value.trim(),
         autoSync: document.getElementById('autoSyncCheckbox').checked
       };
-      await setMeta('syncConfig', syncConfig);
+      saveSyncConfigToStorage(syncConfig);
       document.getElementById('syncModal').classList.remove('open');
       if (syncConfig.syncUrl) {
         try {
@@ -1566,10 +1609,13 @@
           alert(`同期エラー: ${err.message}`);
           setProgress(false);
         }
+      } else {
+        await refreshUI(allTracks);
       }
     });
 
     document.getElementById('syncNowBtn').addEventListener('click', async () => {
+      syncConfig = loadSyncConfigFromStorage();
       if (!syncConfig.syncUrl) {
         document.getElementById('openSyncBtn').click();
         return;
@@ -1584,7 +1630,7 @@
     });
 
     document.getElementById('clearDbBtn').addEventListener('click', async () => {
-      if (!confirm('ローカルの IndexedDB データを消去しますか？')) return;
+      if (!confirm('ローカルの楽曲キャッシュ（IndexedDB）を消去しますか？（保存済みURL設定は維持されます）')) return;
       const db = await openDB();
       await new Promise((resolve, reject) => {
         const tx = db.transaction([STORE_TRACKS, STORE_META], 'readwrite');
@@ -1593,7 +1639,6 @@
         tx.oncomplete = resolve;
         tx.onerror = () => reject(tx.error);
       });
-      syncConfig = { syncUrl: '', token: '', autoSync: false };
       await refreshUI([]);
     });
 
@@ -1605,9 +1650,7 @@
     });
 
     (async function init() {
-      const savedCfg = await getMeta('syncConfig');
-      if (savedCfg) syncConfig = savedCfg;
-
+      syncConfig = loadSyncConfigFromStorage();
       const cached = await loadTracksFromDB();
       await refreshUI(cached);
 
