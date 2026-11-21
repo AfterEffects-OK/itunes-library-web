@@ -580,6 +580,9 @@
     const STORE_META = 'meta';
     const STORAGE_SYNC_CONFIG_KEY = 'itunes_library_sync_config_v1';
 
+    const jaCollator = new Intl.Collator('ja', { numeric: true });
+    const jaPlainCollator = new Intl.Collator('ja');
+
     function loadSyncConfigFromStorage() {
       try {
         const raw = localStorage.getItem(STORAGE_SYNC_CONFIG_KEY);
@@ -626,7 +629,7 @@
 
     async function saveTracksToDB(tracks, onProgress) {
       const db = await openDB();
-      const batchSize = 5000;
+      const batchSize = 8000;
       await new Promise((resolve, reject) => {
         const tx = db.transaction(STORE_TRACKS, 'readwrite');
         tx.objectStore(STORE_TRACKS).clear();
@@ -634,16 +637,36 @@
         tx.onerror = () => reject(tx.error);
       });
 
-      for (let i = 0; i < tracks.length; i += batchSize) {
+      const total = tracks.length;
+      for (let i = 0; i < total; i += batchSize) {
         const slice = tracks.slice(i, i + batchSize);
         await new Promise((resolve, reject) => {
           const tx = db.transaction(STORE_TRACKS, 'readwrite');
           const store = tx.objectStore(STORE_TRACKS);
-          for (const t of slice) store.put(t);
+          for (let j = 0; j < slice.length; j++) {
+            const t = slice[j];
+            store.put({
+              id: t.id,
+              name: t.name,
+              album: t.album,
+              trackNo: t.trackNo,
+              trackCount: t.trackCount,
+              discNo: t.discNo,
+              discCount: t.discCount,
+              artist: t.artist,
+              comments: t.comments,
+              duration: t.duration,
+              bitrate: t.bitrate,
+              year: t.year,
+              dateAdded: t.dateAdded,
+              genre: t.genre,
+              size: t.size
+            });
+          }
           tx.oncomplete = resolve;
           tx.onerror = () => reject(tx.error);
         });
-        if (onProgress) onProgress(Math.min(100, Math.round(((i + slice.length) / tracks.length) * 100)));
+        if (onProgress) onProgress(Math.min(100, Math.round(((i + slice.length) / total) * 100)));
       }
     }
 
@@ -652,7 +675,14 @@
       return new Promise((resolve, reject) => {
         const tx = db.transaction(STORE_TRACKS, 'readonly');
         const req = tx.objectStore(STORE_TRACKS).getAll();
-        req.onsuccess = () => resolve(req.result || []);
+        req.onsuccess = () => {
+          const rawList = req.result || [];
+          const hydrated = new Array(rawList.length);
+          for (let i = 0; i < rawList.length; i++) {
+            hydrated[i] = hydrateTrack(rawList[i], i);
+          }
+          resolve(hydrated);
+        };
         req.onerror = () => reject(req.error);
       });
     }
@@ -753,32 +783,64 @@
       return `${n}`;
     }
 
-    function normalizeTrack(raw, idx) {
-      const name = raw.Name ?? raw.n ?? '';
-      const album = raw.Album ?? raw.b ?? '';
-      const trackNo = Number(raw['Track Number'] ?? raw.tn ?? 0) || 0;
-      const trackCount = Number(raw['Track Count'] ?? raw.tc ?? 0) || 0;
-      const discNo = Number(raw['Disc Number'] ?? raw.dn ?? 0) || 0;
-      const discCount = Number(raw['Disc Count'] ?? raw.dc ?? 0) || 0;
-      const artist = raw.Artist ?? raw.a ?? '';
-      const comments = raw.Comments ?? raw.c ?? '';
-      const duration = Number(raw['Total Time'] ?? raw.d ?? 0) || 0;
-      const bitrate = Number(raw['Bit Rate'] ?? raw.br ?? 0) || 0;
-      const year = Number(raw.Year ?? raw.y ?? 0) || 0;
-      const dateAdded = raw['Date Added'] ?? raw.da ?? '';
-      const genre = raw.Genre ?? raw.g ?? '';
-      const size = Number(raw.Size ?? raw.sz ?? 0) || 0;
+    function hydrateTrack(base, idx) {
+      const name = base.name || '';
+      const album = base.album || '';
+      const trackNo = Number(base.trackNo) || 0;
+      const trackCount = Number(base.trackCount) || 0;
+      const discNo = Number(base.discNo) || 0;
+      const discCount = Number(base.discCount) || 0;
+      const artist = base.artist || '';
+      const comments = base.comments || '';
+      const duration = Number(base.duration) || 0;
+      const bitrate = Number(base.bitrate) || 0;
+      const year = Number(base.year) || 0;
+      const dateAdded = base.dateAdded || '';
+      const genre = base.genre || '';
+      const size = Number(base.size) || 0;
 
-      const id = idx + 1;
-      const searchBlob = `${name} ${album} ${artist} ${comments} ${genre}`.toLowerCase();
+      const dateMs = dateAdded ? (Date.parse(dateAdded) || 0) : 0;
+      const searchBlob = `${name}\u0000${album}\u0000${artist}\u0000${comments}\u0000${genre}`.toLowerCase();
 
       return {
-        id, name, album,
-        trackNo, trackCount,
-        discNo, discCount,
-        artist, comments, duration, bitrate, year, dateAdded, genre, size,
+        id: base.id || (idx + 1),
+        name,
+        album,
+        trackNo,
+        trackCount,
+        discNo,
+        discCount,
+        artist,
+        comments,
+        duration,
+        bitrate,
+        year,
+        dateAdded,
+        genre,
+        size,
+        dateMs,
         searchBlob
       };
+    }
+
+    function normalizeTrack(raw, idx) {
+      return hydrateTrack({
+        id: idx + 1,
+        name: raw.Name ?? raw.n ?? '',
+        album: raw.Album ?? raw.b ?? '',
+        trackNo: Number(raw['Track Number'] ?? raw.tn ?? 0) || 0,
+        trackCount: Number(raw['Track Count'] ?? raw.tc ?? 0) || 0,
+        discNo: Number(raw['Disc Number'] ?? raw.dn ?? 0) || 0,
+        discCount: Number(raw['Disc Count'] ?? raw.dc ?? 0) || 0,
+        artist: raw.Artist ?? raw.a ?? '',
+        comments: raw.Comments ?? raw.c ?? '',
+        duration: Number(raw['Total Time'] ?? raw.d ?? 0) || 0,
+        bitrate: Number(raw['Bit Rate'] ?? raw.br ?? 0) || 0,
+        year: Number(raw.Year ?? raw.y ?? 0) || 0,
+        dateAdded: raw['Date Added'] ?? raw.da ?? '',
+        genre: raw.Genre ?? raw.g ?? '',
+        size: Number(raw.Size ?? raw.sz ?? 0) || 0
+      }, idx);
     }
 
     function toCompactTrack(t) {
@@ -918,7 +980,9 @@
       if (!dict) return null;
       const record = {};
       let currentKey = null;
-      for (const child of dict.children) {
+      const children = dict.children;
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i];
         if (child.tagName === 'key') {
           currentKey = child.textContent;
         } else if (currentKey) {
@@ -1015,7 +1079,10 @@
         const text = await file.text();
         const parsed = JSON.parse(text);
         const arr = Array.isArray(parsed) ? parsed : (parsed.tracks || []);
-        const tracks = arr.map((item, idx) => normalizeTrack(item, idx));
+        const tracks = new Array(arr.length);
+        for (let i = 0; i < arr.length; i++) {
+          tracks[i] = normalizeTrack(arr[i], i);
+        }
         setProgress(true, 'IndexedDB へ保存中...', 70);
         await saveTracksToDB(tracks);
         setProgress(false);
@@ -1044,8 +1111,8 @@
       let currentItems = [];
       let currentBytes = 2;
 
-      for (const t of tracks) {
-        const compact = toCompactTrack(t);
+      for (let i = 0; i < tracks.length; i++) {
+        const compact = toCompactTrack(tracks[i]);
         const serialized = JSON.stringify(compact);
         const itemBytes = getByteLength(serialized);
         const separatorBytes = currentItems.length > 0 ? 1 : 0;
@@ -1065,11 +1132,12 @@
 
       const files = [];
       const partNames = [];
-      parts.forEach((jsonStr, idx) => {
+      for (let idx = 0; idx < parts.length; idx++) {
+        const jsonStr = parts[idx];
         const fileName = `part-${String(idx + 1).padStart(3, '0')}.json`;
         partNames.push(fileName);
         files.push({ name: fileName, content: jsonStr, bytes: getByteLength(jsonStr) });
-      });
+      }
 
       const manifestObj = {
         version: 1,
@@ -1116,7 +1184,10 @@
       let merged = [];
       if (Array.isArray(data)) {
         setProgress(true, `${data.length.toLocaleString()} 曲を展開中...`, 60);
-        merged = data.map((item, idx) => normalizeTrack(item, idx));
+        merged = new Array(data.length);
+        for (let idx = 0; idx < data.length; idx++) {
+          merged[idx] = normalizeTrack(data[idx], idx);
+        }
       } else if (Array.isArray(data.parts)) {
         const baseUrl = config.syncUrl.slice(0, config.syncUrl.lastIndexOf('/') + 1);
         for (let i = 0; i < data.parts.length; i++) {
@@ -1127,12 +1198,15 @@
           const pRes = await fetch(partUrl, { headers });
           if (!pRes.ok) throw new Error(`${partFile} 取得失敗 (${pRes.status})`);
           const partArr = await pRes.json();
-          for (const item of partArr) {
-            merged.push(normalizeTrack(item, merged.length));
+          for (let k = 0; k < partArr.length; k++) {
+            merged.push(normalizeTrack(partArr[k], merged.length));
           }
         }
       } else if (Array.isArray(data.tracks)) {
-        merged = data.tracks.map((item, idx) => normalizeTrack(item, idx));
+        merged = new Array(data.tracks.length);
+        for (let idx = 0; idx < data.tracks.length; idx++) {
+          merged[idx] = normalizeTrack(data.tracks[idx], idx);
+        }
       } else {
         throw new Error('対応していないJSONフォーマットです');
       }
@@ -1151,36 +1225,36 @@
       if (field === 'track') {
         if (a.trackNo !== b.trackNo) return (a.trackNo - b.trackNo) * mult;
         if (a.trackCount !== b.trackCount) return (a.trackCount - b.trackCount) * mult;
-        return String(a.name || '').localeCompare(String(b.name || ''), 'ja') * mult;
+        return jaPlainCollator.compare(a.name, b.name) * mult;
       }
 
       if (field === 'disc') {
         if (a.discNo !== b.discNo) return (a.discNo - b.discNo) * mult;
         if (a.discCount !== b.discCount) return (a.discCount - b.discCount) * mult;
         if (a.trackNo !== b.trackNo) return (a.trackNo - b.trackNo) * mult;
-        return String(a.name || '').localeCompare(String(b.name || ''), 'ja') * mult;
+        return jaPlainCollator.compare(a.name, b.name) * mult;
       }
 
-      if (['duration', 'bitrate', 'year', 'size'].includes(field)) {
+      if (field === 'duration' || field === 'bitrate' || field === 'year' || field === 'size') {
         return ((a[field] || 0) - (b[field] || 0)) * mult;
       }
 
       if (field === 'dateAdded') {
-        const ta = a.dateAdded ? new Date(a.dateAdded).getTime() || 0 : 0;
-        const tb = b.dateAdded ? new Date(b.dateAdded).getTime() || 0 : 0;
-        return (ta - tb) * mult;
+        return (a.dateMs - b.dateMs) * mult;
       }
 
-      return String(a[field] || '').localeCompare(String(b[field] || ''), 'ja', { numeric: true }) * mult;
+      return jaCollator.compare(a[field] || '', b[field] || '') * mult;
     }
 
     function updateHeaderSortIndicators(field, dir) {
-      document.querySelectorAll('th[data-sort]').forEach(th => {
+      const headers = document.querySelectorAll('th[data-sort]');
+      for (let i = 0; i < headers.length; i++) {
+        const th = headers[i];
         const isCurrent = th.dataset.sort === field;
         th.classList.toggle('active-sort', isCurrent);
         const mark = th.querySelector('.sort-mark');
         if (mark) mark.textContent = isCurrent ? (dir === 'asc' ? '▲' : '▼') : '';
-      });
+      }
     }
 
     function escapeHtml(str) {
@@ -1189,29 +1263,31 @@
 
     // --- フリーワード＆相互連動プルダウン更新 ---
     function matchesTerms(t, terms) {
+      const blob = t.searchBlob;
       for (let i = 0; i < terms.length; i++) {
-        if (!t.searchBlob.includes(terms[i])) return false;
+        if (!blob.includes(terms[i])) return false;
       }
       return true;
     }
 
     function renderSelectOptions(selectEl, defaultLabel, countMap, currentVal, sortFn, formatLabelFn) {
       const entries = Array.from(countMap.entries()).sort(sortFn);
-      let html = `<option value="">${escapeHtml(defaultLabel)} (${entries.length})</option>`;
+      const parts = [`<option value="">${escapeHtml(defaultLabel)} (${entries.length})</option>`];
       let hasCurrent = currentVal === '';
 
-      for (const [val, count] of entries) {
+      for (let i = 0; i < entries.length; i++) {
+        const [val, count] = entries[i];
         const strVal = String(val);
         if (strVal === currentVal) hasCurrent = true;
         const label = formatLabelFn ? formatLabelFn(val, count) : `${val} (${count})`;
-        html += `<option value="${escapeHtml(strVal)}">${escapeHtml(label)}</option>`;
+        parts.push(`<option value="${escapeHtml(strVal)}">${escapeHtml(label)}</option>`);
       }
 
       if (!hasCurrent && currentVal !== '') {
-        html += `<option value="${escapeHtml(currentVal)}">${escapeHtml(currentVal)} (0)</option>`;
+        parts.push(`<option value="${escapeHtml(currentVal)}">${escapeHtml(currentVal)} (0)</option>`);
       }
 
-      selectEl.innerHTML = html;
+      selectEl.innerHTML = parts.join('');
       selectEl.value = currentVal;
       selectEl.classList.toggle('has-value', currentVal !== '');
     }
@@ -1221,10 +1297,12 @@
       const yearCounts = new Map();
       const artistCounts = new Map();
       const albumCounts = new Map();
+      const hasTerms = terms.length > 0;
+      const total = allTracks.length;
 
-      for (let i = 0; i < allTracks.length; i++) {
+      for (let i = 0; i < total; i++) {
         const t = allTracks[i];
-        if (terms.length > 0 && !matchesTerms(t, terms)) continue;
+        if (hasTerms && !matchesTerms(t, terms)) continue;
 
         const okGenre = !selGenre || t.genre === selGenre;
         const okYear = !selYear || t.year === selYear;
@@ -1250,7 +1328,7 @@
         '全ジャンル',
         genreCounts,
         selGenre,
-        (a, b) => String(a[0]).localeCompare(String(b[0]), 'ja')
+        (a, b) => jaPlainCollator.compare(String(a[0]), String(b[0]))
       );
 
       renderSelectOptions(
@@ -1267,7 +1345,7 @@
         '全アーティスト名',
         artistCounts,
         selArtist,
-        (a, b) => String(a[0]).localeCompare(String(b[0]), 'ja')
+        (a, b) => jaPlainCollator.compare(String(a[0]), String(b[0]))
       );
 
       renderSelectOptions(
@@ -1275,7 +1353,7 @@
         '全アルバム名',
         albumCounts,
         selAlbum,
-        (a, b) => String(a[0]).localeCompare(String(b[0]), 'ja')
+        (a, b) => jaPlainCollator.compare(String(a[0]), String(b[0]))
       );
     }
 
@@ -1289,14 +1367,19 @@
 
       updateFacetedDropdowns(terms, selGenre, selYear, selArtist, selAlbum);
 
-      filteredTracks = allTracks.filter(t => {
-        if (selGenre && t.genre !== selGenre) return false;
-        if (selYear && t.year !== selYear) return false;
-        if (selArtist && t.artist !== selArtist) return false;
-        if (selAlbum && t.album !== selAlbum) return false;
-        if (terms.length > 0 && !matchesTerms(t, terms)) return false;
-        return true;
-      });
+      const hasTerms = terms.length > 0;
+      const nextFiltered = [];
+      const total = allTracks.length;
+      for (let i = 0; i < total; i++) {
+        const t = allTracks[i];
+        if (selGenre && t.genre !== selGenre) continue;
+        if (selYear && t.year !== selYear) continue;
+        if (selArtist && t.artist !== selArtist) continue;
+        if (selAlbum && t.album !== selAlbum) continue;
+        if (hasTerms && !matchesTerms(t, terms)) continue;
+        nextFiltered.push(t);
+      }
+      filteredTracks = nextFiltered;
 
       const [field, dir] = dom.sortSelect.value.split('-');
       updateHeaderSortIndicators(field, dir);
@@ -1306,49 +1389,62 @@
     }
 
     function renderLists() {
-      const slice = filteredTracks.slice(0, displayLimit);
+      const limit = Math.min(displayLimit, filteredTracks.length);
+      const tableHtml = new Array(limit);
+      const mobileHtml = new Array(limit);
 
-      dom.trackTbody.innerHTML = slice.map((t, i) => `
-        <tr data-idx="${i}">
-          <td><button type="button" class="mini preview-btn" data-idx="${i}" title="30秒試聴">▶ 試聴</button></td>
-          <td title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</td>
-          <td title="${escapeHtml(t.album)}">${escapeHtml(t.album)}</td>
-          <td class="num">${formatRatio(t.trackNo, t.trackCount)}</td>
-          <td class="num">${formatRatio(t.discNo, t.discCount)}</td>
-          <td title="${escapeHtml(t.artist)}">${escapeHtml(t.artist)}</td>
-          <td title="${escapeHtml(t.comments)}">${escapeHtml(t.comments)}</td>
-          <td class="num">${formatDuration(t.duration)}</td>
-          <td class="num">${t.bitrate ? `${t.bitrate} kbps` : '-'}</td>
-          <td class="num">${t.year || '-'}</td>
-          <td>${formatDate(t.dateAdded)}</td>
-          <td>${escapeHtml(t.genre)}</td>
-          <td class="num">${formatSize(t.size)}</td>
-        </tr>
-      `).join('');
-
-      dom.mobileList.innerHTML = slice.map((t, i) => {
+      for (let i = 0; i < limit; i++) {
+        const t = filteredTracks[i];
         const trackStr = formatRatio(t.trackNo, t.trackCount);
         const discStr = formatRatio(t.discNo, t.discCount);
-        return `
-          <div class="track-card" data-idx="${i}">
-            <button type="button" class="card-play preview-btn" data-idx="${i}" aria-label="試聴">▶</button>
-            <div class="card-main">
-              <div class="card-title">${escapeHtml(t.name || '無題')}</div>
-              <div class="card-sub">${escapeHtml(t.artist || '-')} — ${escapeHtml(t.album || '-')}</div>
-              <div class="card-tags">
-                ${trackStr !== '-' ? `<span class="tag">曲 ${trackStr}</span>` : ''}
-                ${discStr !== '-' ? `<span class="tag">盤 ${discStr}</span>` : ''}
-                <span class="tag">${formatDuration(t.duration)}</span>
-                ${t.year ? `<span class="tag">${t.year}</span>` : ''}
-                ${t.genre ? `<span class="tag">${escapeHtml(t.genre)}</span>` : ''}
-                ${t.bitrate ? `<span class="tag">${t.bitrate}kbps</span>` : ''}
-              </div>
-            </div>
-          </div>
-        `;
-      }).join('');
+        const durStr = formatDuration(t.duration);
+        const bitStr = t.bitrate ? `${t.bitrate} kbps` : '-';
+        const yearStr = t.year || '-';
+        const dateStr = formatDate(t.dateAdded);
+        const sizeStr = formatSize(t.size);
+        const escName = escapeHtml(t.name);
+        const escAlbum = escapeHtml(t.album);
+        const escArtist = escapeHtml(t.artist);
+        const escComments = escapeHtml(t.comments);
+        const escGenre = escapeHtml(t.genre);
 
-      dom.resultCount.textContent = `表示: ${slice.length.toLocaleString()} / 絞込: ${filteredTracks.length.toLocaleString()} / 総曲数: ${allTracks.length.toLocaleString()}`;
+        tableHtml[i] = `<tr data-idx="${i}">` +
+          `<td><button type="button" class="mini preview-btn" data-idx="${i}" title="30秒試聴">▶ 試聴</button></td>` +
+          `<td title="${escName}">${escName}</td>` +
+          `<td title="${escAlbum}">${escAlbum}</td>` +
+          `<td class="num">${trackStr}</td>` +
+          `<td class="num">${discStr}</td>` +
+          `<td title="${escArtist}">${escArtist}</td>` +
+          `<td title="${escComments}">${escComments}</td>` +
+          `<td class="num">${durStr}</td>` +
+          `<td class="num">${bitStr}</td>` +
+          `<td class="num">${yearStr}</td>` +
+          `<td>${dateStr}</td>` +
+          `<td>${escGenre}</td>` +
+          `<td class="num">${sizeStr}</td>` +
+          `</tr>`;
+
+        mobileHtml[i] = `<div class="track-card" data-idx="${i}">` +
+          `<button type="button" class="card-play preview-btn" data-idx="${i}" aria-label="試聴">▶</button>` +
+          `<div class="card-main">` +
+          `<div class="card-title">${escapeHtml(t.name || '無題')}</div>` +
+          `<div class="card-sub">${escapeHtml(t.artist || '-')} — ${escapeHtml(t.album || '-')}</div>` +
+          `<div class="card-tags">` +
+          (trackStr !== '-' ? `<span class="tag">曲 ${trackStr}</span>` : '') +
+          (discStr !== '-' ? `<span class="tag">盤 ${discStr}</span>` : '') +
+          `<span class="tag">${durStr}</span>` +
+          (t.year ? `<span class="tag">${t.year}</span>` : '') +
+          (t.genre ? `<span class="tag">${escGenre}</span>` : '') +
+          (t.bitrate ? `<span class="tag">${t.bitrate}kbps</span>` : '') +
+          `</div>` +
+          `</div>` +
+          `</div>`;
+      }
+
+      dom.trackTbody.innerHTML = tableHtml.join('');
+      dom.mobileList.innerHTML = mobileHtml.join('');
+
+      dom.resultCount.textContent = `表示: ${limit.toLocaleString()} / 絞込: ${filteredTracks.length.toLocaleString()} / 総曲数: ${allTracks.length.toLocaleString()}`;
       dom.loadMoreBtn.style.display = filteredTracks.length > displayLimit ? 'inline-flex' : 'none';
     }
 
@@ -1410,7 +1506,7 @@
       searchDebounceTimer = setTimeout(() => {
         displayLimit = 200;
         applyFiltersAndRender();
-      }, 120);
+      }, 90);
     });
 
     [dom.genreFilter, dom.yearFilter, dom.artistFilter, dom.albumFilter, dom.sortSelect].forEach(el => {
@@ -1544,7 +1640,9 @@
       setProgress(true, '最大サイズ指定でJSONを構築中...', 20);
       const files = buildSplitJsonParts(allTracks, maxMb);
       const zip = new JSZip();
-      for (const f of files) zip.file(f.name, f.content);
+      for (let i = 0; i < files.length; i++) {
+        zip.file(files[i].name, files[i].content);
+      }
       const blob = await zip.generateAsync({ type: 'blob' }, (meta) => {
         setProgress(true, `ZIP圧縮中... ${Math.round(meta.percent)}%`, Math.round(meta.percent));
       });
