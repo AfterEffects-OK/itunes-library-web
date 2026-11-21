@@ -2,8 +2,8 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>iTunes ライブラリ検索（高視認UI・URLローカル保存・連動プルダウン・スマホ対応）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
+  <title>iTunes ライブラリ検索（スマホ完全対応・URL保存・連動絞り込み）</title>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     :root {
@@ -18,28 +18,37 @@
       --muted: #8f9bb3;
       --accent: #6e8eff;
       --accent-hover: #5879f5;
-      --accent-soft: rgba(110, 142, 255, 0.14);
+      --accent-soft: rgba(110, 142, 255, 0.16);
       --success: #34d399;
       --success-soft: rgba(52, 211, 153, 0.14);
+      --safe-top: env(safe-area-inset-top, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
       --radius-lg: 14px;
       --radius-md: 10px;
       --radius-sm: 8px;
     }
 
-    * {
+    *, *::before, *::after {
       box-sizing: border-box;
       -webkit-tap-highlight-color: transparent;
     }
 
-    body {
+    html, body {
       margin: 0;
+      padding: 0;
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
       background: var(--bg);
       color: var(--text);
       line-height: 1.5;
-      padding-bottom: calc(92px + var(--safe-bottom));
       -webkit-font-smoothing: antialiased;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      padding-bottom: calc(110px + var(--safe-bottom));
     }
 
     /* ヘッダー */
@@ -47,24 +56,26 @@
       position: sticky;
       top: 0;
       z-index: 25;
-      background: rgba(12, 15, 22, 0.92);
+      background: rgba(12, 15, 22, 0.95);
       backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
       border-bottom: 1px solid var(--border);
-      padding: 10px 16px;
+      padding: calc(10px + var(--safe-top)) 16px 10px;
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
       align-items: center;
       justify-content: space-between;
+      width: 100%;
     }
 
     .brand {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       font-weight: 700;
       font-size: 16px;
-      letter-spacing: 0.01em;
+      min-width: 0;
     }
 
     .brand-icon {
@@ -77,18 +88,19 @@
       justify-content: center;
       font-size: 14px;
       color: #fff;
-      box-shadow: 0 2px 10px rgba(110, 142, 255, 0.3);
+      flex-shrink: 0;
     }
 
     .badge {
       font-size: 11px;
       font-weight: 600;
-      padding: 3px 10px;
+      padding: 3px 9px;
       border-radius: 999px;
       background: var(--surface-2);
       border: 1px solid var(--border);
       color: var(--muted);
       font-variant-numeric: tabular-nums;
+      white-space: nowrap;
     }
 
     .badge.ok {
@@ -115,18 +127,15 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
+      gap: 5px;
       min-height: 36px;
-      transition: background 0.14s ease, border-color 0.14s ease, transform 0.08s ease;
+      white-space: nowrap;
+      transition: background 0.14s ease, border-color 0.14s ease;
     }
 
     button:hover, .btn:hover {
       background: var(--surface-hover);
       border-color: var(--border-strong);
-    }
-
-    button:active, .btn:active {
-      transform: scale(0.98);
     }
 
     button.primary {
@@ -138,7 +147,6 @@
 
     button.primary:hover {
       background: var(--accent-hover);
-      border-color: var(--accent-hover);
     }
 
     button.ghost-danger:hover {
@@ -147,20 +155,21 @@
     }
 
     button.chip {
-      padding: 5px 11px;
+      padding: 6px 12px;
       font-size: 12px;
-      min-height: 32px;
+      min-height: 34px;
     }
 
     button.mini {
-      padding: 5px 10px;
+      padding: 6px 10px;
       font-size: 12px;
       border-radius: 7px;
-      min-height: 30px;
+      min-height: 32px;
       font-weight: 600;
     }
 
     main {
+      width: 100%;
       max-width: 1720px;
       margin: 0 auto;
       padding: 14px 16px;
@@ -169,12 +178,12 @@
     /* 取込ドロップゾーン */
     .dropzone {
       border: 1.5px dashed var(--border-strong);
-      background: linear-gradient(180deg, rgba(21, 25, 36, 0.9), rgba(21, 25, 36, 0.6));
+      background: var(--surface);
       border-radius: var(--radius-md);
-      padding: 12px 16px;
+      padding: 12px 14px;
       text-align: center;
-      margin-bottom: 14px;
-      transition: border-color 0.15s ease, background 0.15s ease;
+      margin-bottom: 12px;
+      width: 100%;
     }
 
     .dropzone.dragover {
@@ -183,14 +192,15 @@
     }
 
     .dropzone strong {
+      display: block;
       font-size: 13px;
       color: var(--text);
     }
 
     .dropzone p {
-      margin: 3px 0 0;
+      margin: 4px 0 0;
       color: var(--muted);
-      font-size: 12px;
+      font-size: 11.5px;
     }
 
     /* 進捗バー */
@@ -200,8 +210,9 @@
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
       padding: 12px 14px;
-      margin-bottom: 14px;
+      margin-bottom: 12px;
       font-size: 13px;
+      width: 100%;
     }
 
     .progress-wrap.active {
@@ -233,24 +244,31 @@
       flex-direction: column;
       gap: 10px;
       margin-bottom: 12px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+      width: 100%;
+      min-width: 0;
     }
 
     .search-row {
       display: grid;
-      grid-template-columns: 1fr auto;
+      grid-template-columns: minmax(0, 1fr) auto;
       gap: 8px;
       align-items: center;
+      width: 100%;
     }
 
     .dropdown-row {
       display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 8px;
+      width: 100%;
+      min-width: 0;
     }
 
     input, select {
+      display: block;
       width: 100%;
+      min-width: 0;
+      max-width: 100%;
       background: var(--surface-2);
       color: var(--text);
       border: 1px solid var(--border);
@@ -258,7 +276,8 @@
       padding: 8px 12px;
       font-size: 13px;
       min-height: 40px;
-      transition: border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     input::placeholder {
@@ -283,11 +302,12 @@
       flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
-      gap: 8px;
-      padding: 2px 4px 10px;
+      gap: 4px 12px;
+      padding: 2px 2px 10px;
       font-size: 12px;
       color: var(--muted);
       font-variant-numeric: tabular-nums;
+      width: 100%;
     }
 
     #resultCount strong {
@@ -295,13 +315,21 @@
       font-weight: 600;
     }
 
+    #syncMeta {
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     /* PC用テーブル一覧 */
     .table-wrap {
+      display: block;
+      width: 100%;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
       overflow-x: auto;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
     }
 
     table {
@@ -340,10 +368,6 @@
       cursor: default;
     }
 
-    th.no-sort:hover {
-      background: var(--surface-2);
-    }
-
     th.active-sort {
       color: var(--accent);
     }
@@ -351,12 +375,10 @@
     .sort-mark {
       font-size: 10px;
       margin-left: 4px;
-      opacity: 0.9;
     }
 
     tbody tr {
       cursor: pointer;
-      transition: background 0.1s ease;
     }
 
     tbody tr:nth-child(even) {
@@ -368,7 +390,7 @@
     }
 
     tbody tr.playing-row {
-      background: rgba(52, 211, 153, 0.1);
+      background: rgba(52, 211, 153, 0.12);
     }
 
     .cell-main {
@@ -391,9 +413,11 @@
       display: none;
       flex-direction: column;
       gap: 10px;
+      width: 100%;
     }
 
     .track-card {
+      width: 100%;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
@@ -402,7 +426,6 @@
       align-items: center;
       gap: 12px;
       cursor: pointer;
-      transition: background 0.12s ease, border-color 0.12s ease;
     }
 
     .track-card:active {
@@ -411,8 +434,8 @@
     }
 
     .track-card.playing-card {
-      border-color: rgba(52, 211, 153, 0.5);
-      background: rgba(52, 211, 153, 0.07);
+      border-color: rgba(52, 211, 153, 0.6);
+      background: rgba(52, 211, 153, 0.08);
     }
 
     .card-play {
@@ -423,13 +446,8 @@
       font-size: 14px;
       padding: 0;
       background: var(--accent-soft);
-      border-color: rgba(110, 142, 255, 0.35);
-      color: #b8cbff;
-    }
-
-    .card-play:hover {
-      background: var(--accent);
-      color: #fff;
+      border-color: rgba(110, 142, 255, 0.4);
+      color: #c2d2ff;
     }
 
     .card-main {
@@ -475,12 +493,13 @@
     .more-wrap {
       text-align: center;
       padding: 18px 0 8px;
+      width: 100%;
     }
 
     #loadMoreBtn {
-      min-height: 40px;
-      padding: 8px 20px;
-      font-size: 13px;
+      min-height: 44px;
+      padding: 10px 24px;
+      font-size: 13.5px;
     }
 
     /* 画面下部ミニ試聴バー */
@@ -490,14 +509,16 @@
       left: 0;
       right: 0;
       bottom: 0;
+      width: 100%;
       z-index: 35;
-      background: rgba(21, 25, 36, 0.96);
+      background: rgba(21, 25, 36, 0.97);
       backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
       border-top: 1px solid var(--border-strong);
-      padding: 10px 16px calc(10px + var(--safe-bottom));
+      padding: 10px 14px calc(10px + var(--safe-bottom));
       align-items: center;
-      gap: 12px;
-      box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+      gap: 10px;
+      box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
     }
 
     .player-bar.active {
@@ -505,8 +526,8 @@
     }
 
     .player-bar img {
-      width: 46px;
-      height: 46px;
+      width: 44px;
+      height: 44px;
       border-radius: 8px;
       object-fit: cover;
       background: #0d1017;
@@ -515,9 +536,8 @@
     }
 
     .player-meta {
-      min-width: 130px;
-      max-width: 280px;
-      flex-shrink: 1;
+      min-width: 0;
+      flex: 1;
     }
 
     .player-title {
@@ -535,13 +555,12 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      margin-top: 1px;
     }
 
     .player-bar audio {
-      flex: 1;
+      flex: 1.4;
       height: 36px;
-      min-width: 150px;
+      min-width: 160px;
     }
 
     /* モーダル */
@@ -550,8 +569,9 @@
       position: fixed;
       inset: 0;
       z-index: 50;
-      background: rgba(4, 6, 11, 0.78);
+      background: rgba(4, 6, 11, 0.8);
       backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
       align-items: center;
       justify-content: center;
       padding: 16px;
@@ -570,7 +590,7 @@
       padding: 18px;
       max-height: 88vh;
       overflow-y: auto;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+      -webkit-overflow-scrolling: touch;
     }
 
     .modal-head {
@@ -616,8 +636,8 @@
 
     .field-grid {
       display: grid;
-      grid-template-columns: 120px 1fr;
-      gap: 8px 12px;
+      grid-template-columns: 112px minmax(0, 1fr);
+      gap: 8px 10px;
       font-size: 13px;
     }
 
@@ -657,7 +677,7 @@
     }
 
     .size-input-row input {
-      max-width: 130px;
+      max-width: 120px;
       text-align: right;
       font-variant-numeric: tabular-nums;
     }
@@ -685,7 +705,8 @@
       flex-wrap: wrap;
     }
 
-    @media (max-width: 960px) {
+    /* タブレット幅 */
+    @media (max-width: 1024px) {
       .dropdown-row {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -694,79 +715,133 @@
       }
     }
 
+    /* スマホ幅（768px以下） */
     @media (max-width: 768px) {
+      header {
+        position: static;
+        padding: calc(10px + var(--safe-top)) 12px 10px;
+        gap: 8px;
+      }
+
+      .brand {
+        width: 100%;
+        justify-content: space-between;
+        font-size: 15px;
+      }
+
+      .actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+      }
+
+      .actions > label.btn {
+        grid-column: 1 / -1;
+      }
+
+      .actions button, .actions .btn {
+        width: 100%;
+        min-height: 40px;
+        font-size: 12.5px;
+        padding: 8px 10px;
+      }
+
       main {
         padding: 10px 12px;
       }
-      header {
+
+      .dropzone {
         padding: 10px 12px;
       }
-      .actions {
-        width: 100%;
-      }
-      .actions button, .actions .btn {
-        flex: 1 1 auto;
-        font-size: 11.5px;
-        padding: 7px 8px;
-        min-height: 38px;
-      }
+
       .filter-panel {
         padding: 10px;
         gap: 8px;
       }
-      .dropzone {
-        padding: 10px 12px;
+
+      .search-row {
+        grid-template-columns: minmax(0, 1fr);
       }
+
+      .dropdown-row {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+      }
+
       input, select {
         font-size: 16px;
         min-height: 44px;
-      }
-      #resetFiltersBtn {
-        min-height: 44px;
-        padding: 0 14px;
-      }
-      .table-wrap {
-        display: none;
-      }
-      .mobile-list {
-        display: flex;
+        padding: 10px 12px;
       }
 
+      #resetFiltersBtn {
+        width: 100%;
+        min-height: 42px;
+      }
+
+      /* PCテーブルを確実に非表示、スマホカードを表示 */
+      .table-wrap {
+        display: none !important;
+      }
+
+      .mobile-list {
+        display: flex !important;
+      }
+
+      /* ミニプレイヤーをスマホ2段レイアウト化 */
       .player-bar {
         flex-wrap: wrap;
         gap: 8px 10px;
         padding: 10px 12px calc(10px + var(--safe-bottom));
       }
+
       .player-meta {
-        max-width: calc(100% - 116px);
+        width: calc(100% - 125px);
         flex: 1;
       }
+
       .player-bar audio {
         width: 100%;
         flex-basis: 100%;
         order: 3;
-        height: 38px;
+        height: 40px;
       }
 
+      /* モーダルをボトムシート化 */
       .modal-backdrop {
         align-items: flex-end;
         padding: 0;
       }
+
       .modal {
         border-radius: 18px 18px 0 0;
-        max-height: 90vh;
-        padding: 16px 16px calc(20px + var(--safe-bottom));
+        border-bottom: none;
+        max-height: 88dvh;
+        padding: 16px 14px calc(20px + var(--safe-bottom));
       }
+
       .artwork-panel {
         flex-direction: column;
         text-align: center;
       }
+
       .artwork-panel img {
-        width: 148px;
-        height: 148px;
+        width: 140px;
+        height: 140px;
       }
+
+      .field-grid {
+        grid-template-columns: 96px minmax(0, 1fr);
+        font-size: 13px;
+      }
+
+      .modal-foot {
+        flex-direction: column;
+      }
+
       .modal-foot button {
-        flex: 1 1 100%;
+        width: 100%;
         min-height: 44px;
         font-size: 14px;
       }
@@ -776,8 +851,10 @@
 <body>
   <header>
     <div class="brand">
-      <span class="brand-icon" aria-hidden="true">♪</span>
-      <span>iTunes ライブラリ検索</span>
+      <span style="display:inline-flex;align-items:center;gap:8px;min-width:0;">
+        <span class="brand-icon" aria-hidden="true">♪</span>
+        <span>iTunes ライブラリ検索</span>
+      </span>
       <span id="dbStatus" class="badge">読込中...</span>
     </div>
     <div class="actions">
@@ -792,8 +869,8 @@
 
   <main>
     <div id="dropzone" class="dropzone">
-      <strong>Library.xml または 出力済み JSON をドラッグ＆ドロップ（または上部ボタンから選択）</strong>
-      <p>JSONファイル URL はブラウザ（localStorage）に自動保存 / 連動プルダウン / ジャケ写＆30秒試聴</p>
+      <strong>Library.xml または 出力済み JSON を読込</strong>
+      <p>JSONファイル URL はブラウザ保存 / 連動プルダウン / ジャケ写＆30秒試聴</p>
     </div>
 
     <div id="progressWrap" class="progress-wrap">
@@ -803,7 +880,7 @@
 
     <div class="filter-panel">
       <div class="search-row">
-        <input type="search" id="searchInput" placeholder="フリーワード検索（曲名・アルバム・アーティスト・備考・ジャンル / スペースでAND）" />
+        <input type="search" id="searchInput" placeholder="フリーワード検索（曲名・アルバム・アーティスト・備考・ジャンル）" />
         <button id="resetFiltersBtn">条件クリア</button>
       </div>
       <div class="dropdown-row">
@@ -900,7 +977,7 @@
         <div style="flex:1;min-width:0;width:100%;">
           <div id="modalMatchTitle" style="font-weight:700;font-size:14px;"></div>
           <div id="modalMatchAlbum" style="font-size:12px;color:var(--muted);margin-bottom:8px;"></div>
-          <audio id="modalAudio" controls playsinline style="width:100%;height:36px;"></audio>
+          <audio id="modalAudio" controls playsinline style="width:100%;height:38px;"></audio>
         </div>
       </div>
       <div id="detailBody" class="field-grid"></div>
@@ -958,7 +1035,7 @@
       </div>
       <div class="form-row">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-          <input type="checkbox" id="autoSyncCheckbox" style="width:18px;height:18px;min-height:auto;" />
+          <input type="checkbox" id="autoSyncCheckbox" style="width:20px;height:20px;min-height:auto;" />
           <span>ページ起動時に自動でサーバー同期する</span>
         </label>
       </div>
@@ -979,6 +1056,10 @@
 
     const jaCollator = new Intl.Collator('ja', { numeric: true });
     const jaPlainCollator = new Intl.Collator('ja');
+
+    function isMobileViewport() {
+      return window.innerWidth <= 768;
+    }
 
     function loadSyncConfigFromStorage() {
       try {
@@ -1791,60 +1872,73 @@
 
     function renderLists() {
       const limit = Math.min(displayLimit, filteredTracks.length);
-      const tableHtml = new Array(limit);
-      const mobileHtml = new Array(limit);
+      const mobile = isMobileViewport();
 
-      for (let i = 0; i < limit; i++) {
-        const t = filteredTracks[i];
-        const isPlaying = activePlayingId === t.id;
-        const trackStr = formatRatio(t.trackNo, t.trackCount);
-        const discStr = formatRatio(t.discNo, t.discCount);
-        const durStr = formatDuration(t.duration);
-        const bitStr = t.bitrate ? `${t.bitrate} kbps` : '-';
-        const yearStr = t.year || '-';
-        const dateStr = formatDate(t.dateAdded);
-        const sizeStr = formatSize(t.size);
-        const escName = escapeHtml(t.name);
-        const escAlbum = escapeHtml(t.album);
-        const escArtist = escapeHtml(t.artist);
-        const escComments = escapeHtml(t.comments);
-        const escGenre = escapeHtml(t.genre);
+      if (mobile) {
+        const mobileHtml = new Array(limit);
+        for (let i = 0; i < limit; i++) {
+          const t = filteredTracks[i];
+          const isPlaying = activePlayingId === t.id;
+          const trackStr = formatRatio(t.trackNo, t.trackCount);
+          const discStr = formatRatio(t.discNo, t.discCount);
+          const durStr = formatDuration(t.duration);
+          const escGenre = escapeHtml(t.genre);
 
-        tableHtml[i] = `<tr data-idx="${i}" class="${isPlaying ? 'playing-row' : ''}">` +
-          `<td><button type="button" class="mini preview-btn" data-idx="${i}" title="30秒試聴">${isPlaying ? '♪ 再生中' : '▶ 試聴'}</button></td>` +
-          `<td class="cell-main" title="${escName}">${escName}</td>` +
-          `<td class="cell-sub" title="${escAlbum}">${escAlbum}</td>` +
-          `<td class="num">${trackStr}</td>` +
-          `<td class="num">${discStr}</td>` +
-          `<td class="cell-sub" title="${escArtist}">${escArtist}</td>` +
-          `<td title="${escComments}">${escComments}</td>` +
-          `<td class="num">${durStr}</td>` +
-          `<td class="num">${bitStr}</td>` +
-          `<td class="num">${yearStr}</td>` +
-          `<td>${dateStr}</td>` +
-          `<td>${escGenre}</td>` +
-          `<td class="num">${sizeStr}</td>` +
-          `</tr>`;
+          mobileHtml[i] = `<div class="track-card ${isPlaying ? 'playing-card' : ''}" data-idx="${i}">` +
+            `<button type="button" class="card-play preview-btn" data-idx="${i}" aria-label="試聴">${isPlaying ? '♪' : '▶'}</button>` +
+            `<div class="card-main">` +
+            `<div class="card-title">${escapeHtml(t.name || '無題')}</div>` +
+            `<div class="card-sub">${escapeHtml(t.artist || '-')} — ${escapeHtml(t.album || '-')}</div>` +
+            `<div class="card-tags">` +
+            (trackStr !== '-' ? `<span class="tag">曲 ${trackStr}</span>` : '') +
+            (discStr !== '-' ? `<span class="tag">盤 ${discStr}</span>` : '') +
+            `<span class="tag">${durStr}</span>` +
+            (t.year ? `<span class="tag">${t.year}</span>` : '') +
+            (t.genre ? `<span class="tag">${escGenre}</span>` : '') +
+            (t.bitrate ? `<span class="tag">${t.bitrate}kbps</span>` : '') +
+            `</div>` +
+            `</div>` +
+            `</div>`;
+        }
+        dom.mobileList.innerHTML = mobileHtml.join('');
+        dom.trackTbody.innerHTML = '';
+      } else {
+        const tableHtml = new Array(limit);
+        for (let i = 0; i < limit; i++) {
+          const t = filteredTracks[i];
+          const isPlaying = activePlayingId === t.id;
+          const trackStr = formatRatio(t.trackNo, t.trackCount);
+          const discStr = formatRatio(t.discNo, t.discCount);
+          const durStr = formatDuration(t.duration);
+          const bitStr = t.bitrate ? `${t.bitrate} kbps` : '-';
+          const yearStr = t.year || '-';
+          const dateStr = formatDate(t.dateAdded);
+          const sizeStr = formatSize(t.size);
+          const escName = escapeHtml(t.name);
+          const escAlbum = escapeHtml(t.album);
+          const escArtist = escapeHtml(t.artist);
+          const escComments = escapeHtml(t.comments);
+          const escGenre = escapeHtml(t.genre);
 
-        mobileHtml[i] = `<div class="track-card ${isPlaying ? 'playing-card' : ''}" data-idx="${i}">` +
-          `<button type="button" class="card-play preview-btn" data-idx="${i}" aria-label="試聴">${isPlaying ? '♪' : '▶'}</button>` +
-          `<div class="card-main">` +
-          `<div class="card-title">${escapeHtml(t.name || '無題')}</div>` +
-          `<div class="card-sub">${escapeHtml(t.artist || '-')} — ${escapeHtml(t.album || '-')}</div>` +
-          `<div class="card-tags">` +
-          (trackStr !== '-' ? `<span class="tag">曲 ${trackStr}</span>` : '') +
-          (discStr !== '-' ? `<span class="tag">盤 ${discStr}</span>` : '') +
-          `<span class="tag">${durStr}</span>` +
-          (t.year ? `<span class="tag">${t.year}</span>` : '') +
-          (t.genre ? `<span class="tag">${escGenre}</span>` : '') +
-          (t.bitrate ? `<span class="tag">${t.bitrate}kbps</span>` : '') +
-          `</div>` +
-          `</div>` +
-          `</div>`;
+          tableHtml[i] = `<tr data-idx="${i}" class="${isPlaying ? 'playing-row' : ''}">` +
+            `<td><button type="button" class="mini preview-btn" data-idx="${i}" title="30秒試聴">${isPlaying ? '♪ 再生中' : '▶ 試聴'}</button></td>` +
+            `<td class="cell-main" title="${escName}">${escName}</td>` +
+            `<td class="cell-sub" title="${escAlbum}">${escAlbum}</td>` +
+            `<td class="num">${trackStr}</td>` +
+            `<td class="num">${discStr}</td>` +
+            `<td class="cell-sub" title="${escArtist}">${escArtist}</td>` +
+            `<td title="${escComments}">${escComments}</td>` +
+            `<td class="num">${durStr}</td>` +
+            `<td class="num">${bitStr}</td>` +
+            `<td class="num">${yearStr}</td>` +
+            `<td>${dateStr}</td>` +
+            `<td>${escGenre}</td>` +
+            `<td class="num">${sizeStr}</td>` +
+            `</tr>`;
+        }
+        dom.trackTbody.innerHTML = tableHtml.join('');
+        dom.mobileList.innerHTML = '';
       }
-
-      dom.trackTbody.innerHTML = tableHtml.join('');
-      dom.mobileList.innerHTML = mobileHtml.join('');
 
       dom.resultCount.innerHTML = `表示: <strong>${limit.toLocaleString()}</strong> / 絞込: <strong>${filteredTracks.length.toLocaleString()}</strong> / 総曲数: <strong>${allTracks.length.toLocaleString()}</strong>`;
       dom.loadMoreBtn.style.display = filteredTracks.length > displayLimit ? 'inline-flex' : 'none';
@@ -1867,6 +1961,15 @@
     }
 
     // --- イベント登録 ---
+    let lastIsMobile = isMobileViewport();
+    window.addEventListener('resize', () => {
+      const nowMobile = isMobileViewport();
+      if (nowMobile !== lastIsMobile) {
+        lastIsMobile = nowMobile;
+        renderLists();
+      }
+    });
+
     dom.xmlInput.addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
