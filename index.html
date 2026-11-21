@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>iTunes ライブラリ検索（12項目特化・最大サイズ指定JSON出力＆同期）</title>
+  <title>iTunes ライブラリ検索（全ソート対応・曲順/ディスク順 1/N表記）</title>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     :root {
@@ -67,7 +67,7 @@
     button.primary:hover { background: var(--accent-hover); }
     button.chip { padding: 4px 9px; font-size: 11px; }
 
-    main { max-width: 1560px; margin: 0 auto; padding: 14px 16px; }
+    main { max-width: 1620px; margin: 0 auto; padding: 14px 16px; }
 
     .dropzone {
       border: 2px dashed var(--border);
@@ -101,11 +101,11 @@
 
     .filters {
       display: grid;
-      grid-template-columns: 2.2fr repeat(3, minmax(130px, 1fr)) auto;
+      grid-template-columns: 2.2fr repeat(3, minmax(150px, 1fr)) auto;
       gap: 8px;
       margin-bottom: 10px;
     }
-    @media (max-width: 900px) {
+    @media (max-width: 980px) {
       .filters { grid-template-columns: 1fr 1fr; }
     }
     input, select {
@@ -154,6 +154,8 @@
       user-select: none;
     }
     th:hover { color: var(--text); }
+    th.active-sort { color: var(--accent); }
+    .sort-mark { font-size: 10px; margin-left: 4px; opacity: 0.85; }
     tbody tr { cursor: pointer; }
     tbody tr:hover { background: rgba(108, 140, 255, 0.08); }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -192,7 +194,7 @@
     .modal-head h2 { margin: 0; font-size: 15px; }
     .field-grid {
       display: grid;
-      grid-template-columns: 120px 1fr;
+      grid-template-columns: 125px 1fr;
       gap: 7px 12px;
       font-size: 13px;
     }
@@ -200,16 +202,8 @@
     .field-val { word-break: break-all; }
     .form-row { margin-bottom: 12px; }
     .form-row label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-    .size-input-row {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-    .size-input-row input {
-      max-width: 140px;
-      text-align: right;
-      font-variant-numeric: tabular-nums;
-    }
+    .size-input-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .size-input-row input { max-width: 140px; text-align: right; font-variant-numeric: tabular-nums; }
     .estimate-box {
       background: var(--surface-2);
       border: 1px solid var(--border);
@@ -247,7 +241,7 @@
   <main>
     <div id="dropzone" class="dropzone">
       <strong>Library.xml（350MB超対応）または 出力済み JSON をドラッグ＆ドロップ</strong>
-      <p>抽出対象：曲名・アルバム名・曲番号・アルバム番号・アーティスト名・備考・再生時間・ビットレート・リリース年・追加日・ジャンル・ファイルサイズ（12項目のみ）</p>
+      <p>曲名・アルバム名・曲番号（1/N）・アルバム番号（1/N）・アーティスト名・備考・再生時間・ビットレート・リリース年・追加日・ジャンル・ファイルサイズ（全ソート対応）</p>
     </div>
 
     <div id="progressWrap" class="progress-wrap">
@@ -256,18 +250,34 @@
     </div>
 
     <div class="filters">
-      <input type="search" id="searchInput" placeholder="曲名・アルバム名・アーティスト名・備考で検索（スペースでAND）" />
+      <input type="search" id="searchInput" placeholder="曲名・アルバム名・アーティスト名・備考・ジャンルで検索（スペースでAND）" />
       <select id="genreFilter"><option value="">全ジャンル</option></select>
       <select id="yearFilter"><option value="">全リリース年</option></select>
       <select id="sortSelect">
-        <option value="name-asc">曲名 (昇順)</option>
-        <option value="artist-asc">アーティスト名 (昇順)</option>
-        <option value="album-asc">アルバム名 (昇順)</option>
-        <option value="trackNo-asc">曲番号 (昇順)</option>
-        <option value="year-desc">リリース年 (新しい順)</option>
-        <option value="dateAdded-desc">追加日 (新しい順)</option>
-        <option value="bitrate-desc">ビットレート (高い順)</option>
-        <option value="size-desc">ファイルサイズ (大きい順)</option>
+        <option value="name-asc">曲名 (昇順 ▲)</option>
+        <option value="name-desc">曲名 (降順 ▼)</option>
+        <option value="album-asc">アルバム名 (昇順 ▲)</option>
+        <option value="album-desc">アルバム名 (降順 ▼)</option>
+        <option value="track-asc">曲番号 (昇順 1→N ▲)</option>
+        <option value="track-desc">曲番号 (降順 N→1 ▼)</option>
+        <option value="disc-asc">アルバム番号/ディスク (昇順 1→N ▲)</option>
+        <option value="disc-desc">アルバム番号/ディスク (降順 N→1 ▼)</option>
+        <option value="artist-asc">アーティスト名 (昇順 ▲)</option>
+        <option value="artist-desc">アーティスト名 (降順 ▼)</option>
+        <option value="comments-asc">備考 (昇順 ▲)</option>
+        <option value="comments-desc">備考 (降順 ▼)</option>
+        <option value="duration-asc">再生時間 (短い順 ▲)</option>
+        <option value="duration-desc">再生時間 (長い順 ▼)</option>
+        <option value="bitrate-asc">ビットレート (低い順 ▲)</option>
+        <option value="bitrate-desc">ビットレート (高い順 ▼)</option>
+        <option value="year-asc">リリース年 (古い順 ▲)</option>
+        <option value="year-desc">リリース年 (新しい順 ▼)</option>
+        <option value="dateAdded-asc">追加日 (古い順 ▲)</option>
+        <option value="dateAdded-desc">追加日 (新しい順 ▼)</option>
+        <option value="genre-asc">ジャンル (昇順 ▲)</option>
+        <option value="genre-desc">ジャンル (降順 ▼)</option>
+        <option value="size-asc">ファイルサイズ (小さい順 ▲)</option>
+        <option value="size-desc">ファイルサイズ (大きい順 ▼)</option>
       </select>
       <button id="resetFiltersBtn">クリア</button>
     </div>
@@ -281,18 +291,18 @@
       <table>
         <thead>
           <tr>
-            <th data-sort="name">曲名</th>
-            <th data-sort="album">アルバム名</th>
-            <th data-sort="trackNo" class="num">曲番</th>
-            <th data-sort="discNo" class="num">盤番</th>
-            <th data-sort="artist">アーティスト名</th>
-            <th data-sort="comments">備考</th>
-            <th data-sort="duration" class="num">再生時間</th>
-            <th data-sort="bitrate" class="num">ビットレート</th>
-            <th data-sort="year" class="num">リリース年</th>
-            <th data-sort="dateAdded">追加日</th>
-            <th data-sort="genre">ジャンル</th>
-            <th data-sort="size" class="num">サイズ</th>
+            <th data-sort="name">曲名<span class="sort-mark"></span></th>
+            <th data-sort="album">アルバム名<span class="sort-mark"></span></th>
+            <th data-sort="track" class="num">曲番号<span class="sort-mark"></span></th>
+            <th data-sort="disc" class="num">アルバム番号<span class="sort-mark"></span></th>
+            <th data-sort="artist">アーティスト名<span class="sort-mark"></span></th>
+            <th data-sort="comments">備考<span class="sort-mark"></span></th>
+            <th data-sort="duration" class="num">再生時間<span class="sort-mark"></span></th>
+            <th data-sort="bitrate" class="num">ビットレート<span class="sort-mark"></span></th>
+            <th data-sort="year" class="num">リリース年<span class="sort-mark"></span></th>
+            <th data-sort="dateAdded">追加日<span class="sort-mark"></span></th>
+            <th data-sort="genre">ジャンル<span class="sort-mark"></span></th>
+            <th data-sort="size" class="num">ファイルサイズ<span class="sort-mark"></span></th>
           </tr>
         </thead>
         <tbody id="trackTbody"></tbody>
@@ -322,11 +332,11 @@
   <div id="exportModal" class="modal-backdrop">
     <div class="modal">
       <div class="modal-head">
-        <h2>JSON出力（最大ファイルサイズ指定・12項目抽出）</h2>
+        <h2>JSON出力（最大ファイルサイズ指定）</h2>
         <button data-close="exportModal">閉じる</button>
       </div>
       <p style="font-size:12px;color:var(--muted);margin-top:0;">
-        対象12項目のみを短縮キーで出力します。指定した<strong>最大ファイルサイズ</strong>を超えないように自動で分割（<code>manifest.json</code> ＋ <code>part-001.json</code> ...）されます。
+        指定した<strong>最大ファイルサイズ</strong>を超えないように自動分割（<code>manifest.json</code> ＋ <code>part-001.json</code> ...）して出力します。
       </p>
       <div class="form-row">
         <label for="maxFileSizeMb">1ファイルあたりの最大ファイルサイズ（MB）</label>
@@ -373,8 +383,7 @@
   </div>
 
   <script>
-    // --- IndexedDB 管理 ---
-    const DB_NAME = 'iTunesLibrary12FieldsDB';
+    const DB_NAME = 'iTunesLibrarySort1NDB';
     const DB_VERSION = 1;
     const STORE_TRACKS = 'tracks';
     const STORE_META = 'meta';
@@ -449,7 +458,6 @@
       });
     }
 
-    // --- 状態管理 ---
     let allTracks = [];
     let filteredTracks = [];
     let displayLimit = 200;
@@ -502,11 +510,21 @@
       return d.toLocaleDateString('ja-JP');
     }
 
+    function formatRatio(num, count) {
+      const n = Number(num) || 0;
+      const c = Number(count) || 0;
+      if (n <= 0 && c <= 0) return '-';
+      if (c > 0) return `${n || 0}/${c}`;
+      return `${n}`;
+    }
+
     function normalizeTrack(raw, idx) {
       const name = raw.Name ?? raw.n ?? '';
       const album = raw.Album ?? raw.b ?? '';
       const trackNo = Number(raw['Track Number'] ?? raw.tn ?? 0) || 0;
+      const trackCount = Number(raw['Track Count'] ?? raw.tc ?? 0) || 0;
       const discNo = Number(raw['Disc Number'] ?? raw.dn ?? 0) || 0;
+      const discCount = Number(raw['Disc Count'] ?? raw.dc ?? 0) || 0;
       const artist = raw.Artist ?? raw.a ?? '';
       const comments = raw.Comments ?? raw.c ?? '';
       const duration = Number(raw['Total Time'] ?? raw.d ?? 0) || 0;
@@ -520,8 +538,11 @@
       const searchBlob = `${name} ${album} ${artist} ${comments} ${genre}`.toLowerCase();
 
       return {
-        id, name, album, trackNo, discNo, artist, comments,
-        duration, bitrate, year, dateAdded, genre, size, searchBlob
+        id, name, album,
+        trackNo, trackCount,
+        discNo, discCount,
+        artist, comments, duration, bitrate, year, dateAdded, genre, size,
+        searchBlob
       };
     }
 
@@ -530,7 +551,9 @@
       if (t.name) obj.n = t.name;
       if (t.album) obj.b = t.album;
       if (t.trackNo) obj.tn = t.trackNo;
+      if (t.trackCount) obj.tc = t.trackCount;
       if (t.discNo) obj.dn = t.discNo;
+      if (t.discCount) obj.dc = t.discCount;
       if (t.artist) obj.a = t.artist;
       if (t.comments) obj.c = t.comments;
       if (t.duration) obj.d = t.duration;
@@ -660,10 +683,7 @@
 
     // --- 最大ファイルサイズ指定のJSON分割生成 ---
     const textEncoder = new TextEncoder();
-
-    function getByteLength(str) {
-      return textEncoder.encode(str).byteLength;
-    }
+    function getByteLength(str) { return textEncoder.encode(str).byteLength; }
 
     function getValidatedMaxMb() {
       const val = parseFloat(dom.maxFileSizeMb.value);
@@ -672,19 +692,18 @@
     }
 
     function buildSplitJsonParts(tracks, maxMb) {
-      // 安全マージン（1%または16KB）を差し引いた上限バイト数で厳密に制限
       const rawMaxBytes = Math.floor(maxMb * 1024 * 1024);
       const safeMaxBytes = Math.max(1024, rawMaxBytes - Math.min(16384, Math.floor(rawMaxBytes * 0.01)));
 
       const parts = [];
       let currentItems = [];
-      let currentBytes = 2; // "[" と "]"
+      let currentBytes = 2;
 
       for (const t of tracks) {
         const compact = toCompactTrack(t);
         const serialized = JSON.stringify(compact);
         const itemBytes = getByteLength(serialized);
-        const separatorBytes = currentItems.length > 0 ? 1 : 0; // ","
+        const separatorBytes = currentItems.length > 0 ? 1 : 0;
 
         if (currentItems.length > 0 && currentBytes + separatorBytes + itemBytes > safeMaxBytes) {
           parts.push(`[${currentItems.join(',')}]`);
@@ -704,11 +723,7 @@
       parts.forEach((jsonStr, idx) => {
         const fileName = `part-${String(idx + 1).padStart(3, '0')}.json`;
         partNames.push(fileName);
-        files.push({
-          name: fileName,
-          content: jsonStr,
-          bytes: getByteLength(jsonStr)
-        });
+        files.push({ name: fileName, content: jsonStr, bytes: getByteLength(jsonStr) });
       });
 
       const manifestObj = {
@@ -719,12 +734,7 @@
         parts: partNames
       };
       const manifestStr = JSON.stringify(manifestObj, null, 2);
-      files.unshift({
-        name: 'manifest.json',
-        content: manifestStr,
-        bytes: getByteLength(manifestStr)
-      });
-
+      files.unshift({ name: 'manifest.json', content: manifestStr, bytes: getByteLength(manifestStr) });
       return files;
     }
 
@@ -734,20 +744,17 @@
         return;
       }
       const maxMb = getValidatedMaxMb();
-      // サンプル1000曲から平均バイト数を高速推定
       const sampleCount = Math.min(1000, allTracks.length);
       let sampleBytes = 0;
       for (let i = 0; i < sampleCount; i++) {
         sampleBytes += getByteLength(JSON.stringify(toCompactTrack(allTracks[i]))) + 1;
       }
-      const avgBytesPerTrack = sampleBytes / sampleCount;
-      const estimatedTotalBytes = Math.ceil(avgBytesPerTrack * allTracks.length) + 2;
-      const maxBytes = maxMb * 1024 * 1024;
-      const estimatedParts = Math.max(1, Math.ceil(estimatedTotalBytes / maxBytes));
+      const estimatedTotalBytes = Math.ceil((sampleBytes / sampleCount) * allTracks.length) + 2;
+      const estimatedParts = Math.max(1, Math.ceil(estimatedTotalBytes / (maxMb * 1024 * 1024)));
 
       dom.exportEstimateBox.innerHTML =
         `推定合計データサイズ: <strong>${formatSize(estimatedTotalBytes)}</strong>（全 ${allTracks.length.toLocaleString()} 曲）<br>` +
-        `出力ファイル構成: <strong>manifest.json</strong> ＋ <strong>part-001.json 〜 part-${String(estimatedParts).padStart(3, '0')}.json</strong>（データ部 約 ${estimatedParts} ファイル / 各最大 ${maxMb} MB 以下）`;
+        `出力構成: <strong>manifest.json</strong> ＋ <strong>part-001.json 〜 part-${String(estimatedParts).padStart(3, '0')}.json</strong>（各最大 ${maxMb} MB 以下）`;
     }
 
     // --- サーバー同期 ---
@@ -792,6 +799,47 @@
       return merged;
     }
 
+    // --- iTunes準拠ソート比較 ---
+    function compareTracks(a, b, field, dir) {
+      const mult = dir === 'desc' ? -1 : 1;
+
+      if (field === 'track') {
+        // 曲順: 曲番号 → 総曲数 → 曲名
+        if (a.trackNo !== b.trackNo) return (a.trackNo - b.trackNo) * mult;
+        if (a.trackCount !== b.trackCount) return (a.trackCount - b.trackCount) * mult;
+        return String(a.name || '').localeCompare(String(b.name || ''), 'ja') * mult;
+      }
+
+      if (field === 'disc') {
+        // アルバム番号（ディスク順）: ディスク番号 → 総ディスク数 → 曲番号 → 曲名
+        if (a.discNo !== b.discNo) return (a.discNo - b.discNo) * mult;
+        if (a.discCount !== b.discCount) return (a.discCount - b.discCount) * mult;
+        if (a.trackNo !== b.trackNo) return (a.trackNo - b.trackNo) * mult;
+        return String(a.name || '').localeCompare(String(b.name || ''), 'ja') * mult;
+      }
+
+      if (['duration', 'bitrate', 'year', 'size'].includes(field)) {
+        return ((a[field] || 0) - (b[field] || 0)) * mult;
+      }
+
+      if (field === 'dateAdded') {
+        const ta = a.dateAdded ? new Date(a.dateAdded).getTime() || 0 : 0;
+        const tb = b.dateAdded ? new Date(b.dateAdded).getTime() || 0 : 0;
+        return (ta - tb) * mult;
+      }
+
+      return String(a[field] || '').localeCompare(String(b[field] || ''), 'ja', { numeric: true }) * mult;
+    }
+
+    function updateHeaderSortIndicators(field, dir) {
+      document.querySelectorAll('th[data-sort]').forEach(th => {
+        const isCurrent = th.dataset.sort === field;
+        th.classList.toggle('active-sort', isCurrent);
+        const mark = th.querySelector('.sort-mark');
+        if (mark) mark.textContent = isCurrent ? (dir === 'asc' ? '▲' : '▼') : '';
+      });
+    }
+
     // --- フィルタ＆描画 ---
     function populateFilterOptions(tracks) {
       const genres = new Set();
@@ -834,14 +882,8 @@
       });
 
       const [field, dir] = dom.sortSelect.value.split('-');
-      const mult = dir === 'desc' ? -1 : 1;
-
-      filteredTracks.sort((a, b) => {
-        if (['trackNo', 'discNo', 'duration', 'bitrate', 'year', 'size'].includes(field)) {
-          return ((a[field] || 0) - (b[field] || 0)) * mult;
-        }
-        return String(a[field] || '').localeCompare(String(b[field] || ''), 'ja') * mult;
-      });
+      updateHeaderSortIndicators(field, dir);
+      filteredTracks.sort((a, b) => compareTracks(a, b, field, dir));
 
       renderTable();
     }
@@ -852,8 +894,8 @@
         <tr data-idx="${i}">
           <td title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</td>
           <td title="${escapeHtml(t.album)}">${escapeHtml(t.album)}</td>
-          <td class="num">${t.trackNo || '-'}</td>
-          <td class="num">${t.discNo || '-'}</td>
+          <td class="num">${formatRatio(t.trackNo, t.trackCount)}</td>
+          <td class="num">${formatRatio(t.discNo, t.discCount)}</td>
           <td title="${escapeHtml(t.artist)}">${escapeHtml(t.artist)}</td>
           <td title="${escapeHtml(t.comments)}">${escapeHtml(t.comments)}</td>
           <td class="num">${formatDuration(t.duration)}</td>
@@ -937,8 +979,8 @@
     document.querySelectorAll('th[data-sort]').forEach(th => {
       th.addEventListener('click', () => {
         const col = th.dataset.sort;
-        const cur = dom.sortSelect.value;
-        const nextDir = cur === `${col}-asc` ? 'desc' : 'asc';
+        const [curCol, curDir] = dom.sortSelect.value.split('-');
+        const nextDir = (curCol === col && curDir === 'asc') ? 'desc' : 'asc';
         const optionVal = `${col}-${nextDir}`;
         if ([...dom.sortSelect.options].some(o => o.value === optionVal)) {
           dom.sortSelect.value = optionVal;
@@ -947,7 +989,6 @@
       });
     });
 
-    // 詳細モーダル
     dom.trackTbody.addEventListener('click', (e) => {
       const tr = e.target.closest('tr');
       if (!tr) return;
@@ -958,8 +999,8 @@
       const rows = [
         ['曲名', t.name],
         ['アルバム名', t.album],
-        ['曲番号', t.trackNo || '-'],
-        ['アルバム番号', t.discNo || '-'],
+        ['曲番号', formatRatio(t.trackNo, t.trackCount)],
+        ['アルバム番号', formatRatio(t.discNo, t.discCount)],
         ['アーティスト名', t.artist],
         ['備考', t.comments],
         ['再生時間', formatDuration(t.duration)],
@@ -977,7 +1018,6 @@
       document.getElementById('detailModal').classList.add('open');
     });
 
-    // JSON出力モーダル操作
     document.getElementById('openExportBtn').addEventListener('click', () => {
       if (!allTracks.length) return alert('出力する楽曲データがありません。');
       updateExportEstimate();
@@ -1055,7 +1095,6 @@
       document.getElementById('exportModal').classList.remove('open');
     });
 
-    // サーバー同期
     document.getElementById('openSyncBtn').addEventListener('click', () => {
       document.getElementById('syncUrlInput').value = syncConfig.syncUrl || '';
       document.getElementById('bearerTokenInput').value = syncConfig.token || '';
@@ -1116,7 +1155,6 @@
       });
     });
 
-    // 初期化
     (async function init() {
       const savedCfg = await getMeta('syncConfig');
       if (savedCfg) syncConfig = savedCfg;
