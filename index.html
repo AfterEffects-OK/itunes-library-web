@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>iTunes ライブラリ検索（PC・スマホ対応 / ジャケ写＆30秒試聴 / 分割JSON）</title>
+  <title>iTunes ライブラリ検索（連動プルダウン・アルバム/アーティスト絞り込み対応）</title>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     :root {
@@ -104,11 +104,22 @@
     }
     .progress-bar-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.12s; }
 
-    .filters {
-      display: grid;
-      grid-template-columns: 2.2fr repeat(3, minmax(150px, 1fr)) auto;
+    /* 検索・連動フィルタエリア */
+    .filter-panel {
+      display: flex;
+      flex-direction: column;
       gap: 8px;
       margin-bottom: 10px;
+    }
+    .search-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+    }
+    .dropdown-row {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
     }
     input, select {
       width: 100%;
@@ -121,6 +132,7 @@
       min-height: 38px;
     }
     input:focus, select:focus { outline: none; border-color: var(--accent); }
+    select.has-value { border-color: var(--accent); background: rgba(108, 140, 255, 0.08); }
 
     .stats-bar {
       display: flex;
@@ -165,7 +177,7 @@
     tbody tr:hover { background: rgba(108, 140, 255, 0.08); }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
 
-    /* スマホ用カードリスト（768px以下で表示） */
+    /* スマホ用カードリスト */
     .mobile-list {
       display: none;
       flex-direction: column;
@@ -333,35 +345,26 @@
       flex-wrap: wrap;
     }
 
-    /* スマホ・タブレット向けレスポンシブ調整 */
+    @media (max-width: 960px) {
+      .dropdown-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .dropdown-row #sortSelect { grid-column: 1 / -1; }
+    }
+
     @media (max-width: 768px) {
       header { padding: 8px 12px; }
       .actions { width: 100%; }
       .actions button, .actions .btn { flex: 1 1 auto; font-size: 11px; padding: 6px 8px; }
       .dropzone { padding: 10px; }
       .dropzone strong { font-size: 13px; }
-      .filters {
-        grid-template-columns: 1fr 1fr;
-        gap: 6px;
-      }
-      .filters #searchInput { grid-column: 1 / -1; }
-      .filters #sortSelect { grid-column: 1 / 2; }
-      .filters #resetFiltersBtn { grid-column: 2 / 3; }
-      input, select { font-size: 16px; } /* iOS自動ズーム防止 */
+      input, select { font-size: 16px; }
       .table-wrap { display: none; }
       .mobile-list { display: flex; }
 
-      .player-bar {
-        flex-wrap: wrap;
-        gap: 6px 10px;
-      }
+      .player-bar { flex-wrap: wrap; gap: 6px 10px; }
       .player-meta { max-width: calc(100% - 110px); flex: 1; }
       .player-bar audio { width: 100%; flex-basis: 100%; order: 3; height: 36px; }
 
-      .modal-backdrop {
-        align-items: flex-end;
-        padding: 0;
-      }
+      .modal-backdrop { align-items: flex-end; padding: 0; }
       .modal {
         border-radius: 16px 16px 0 0;
         max-height: 90vh;
@@ -392,7 +395,7 @@
   <main>
     <div id="dropzone" class="dropzone">
       <strong>Library.xml または 出力済み JSON を読込</strong>
-      <p>PC・スマホ対応 / 曲順・ディスク順 1/N 表記 / 全ソート / ジャケ写＆30秒試聴</p>
+      <p>フリーワード連動絞り込み（ジャンル・リリース年・アーティスト名・アルバム名） / ジャケ写＆30秒試聴 / 分割JSON</p>
     </div>
 
     <div id="progressWrap" class="progress-wrap">
@@ -400,37 +403,43 @@
       <div class="progress-bar-bg"><div id="progressFill" class="progress-bar-fill"></div></div>
     </div>
 
-    <div class="filters">
-      <input type="search" id="searchInput" placeholder="曲名・アルバム・アーティスト・備考・ジャンル検索" />
-      <select id="genreFilter"><option value="">全ジャンル</option></select>
-      <select id="yearFilter"><option value="">全リリース年</option></select>
-      <select id="sortSelect">
-        <option value="name-asc">曲名 (昇順 ▲)</option>
-        <option value="name-desc">曲名 (降順 ▼)</option>
-        <option value="album-asc">アルバム名 (昇順 ▲)</option>
-        <option value="album-desc">アルバム名 (降順 ▼)</option>
-        <option value="track-asc">曲番号 (昇順 1→N ▲)</option>
-        <option value="track-desc">曲番号 (降順 N→1 ▼)</option>
-        <option value="disc-asc">アルバム番号/ディスク (昇順 1→N ▲)</option>
-        <option value="disc-desc">アルバム番号/ディスク (降順 N→1 ▼)</option>
-        <option value="artist-asc">アーティスト名 (昇順 ▲)</option>
-        <option value="artist-desc">アーティスト名 (降順 ▼)</option>
-        <option value="comments-asc">備考 (昇順 ▲)</option>
-        <option value="comments-desc">備考 (降順 ▼)</option>
-        <option value="duration-asc">再生時間 (短い順 ▲)</option>
-        <option value="duration-desc">再生時間 (長い順 ▼)</option>
-        <option value="bitrate-asc">ビットレート (低い順 ▲)</option>
-        <option value="bitrate-desc">ビットレート (高い順 ▼)</option>
-        <option value="year-asc">リリース年 (古い順 ▲)</option>
-        <option value="year-desc">リリース年 (新しい順 ▼)</option>
-        <option value="dateAdded-asc">追加日 (古い順 ▲)</option>
-        <option value="dateAdded-desc">追加日 (新しい順 ▼)</option>
-        <option value="genre-asc">ジャンル (昇順 ▲)</option>
-        <option value="genre-desc">ジャンル (降順 ▼)</option>
-        <option value="size-asc">ファイルサイズ (小さい順 ▲)</option>
-        <option value="size-desc">ファイルサイズ (大きい順 ▼)</option>
-      </select>
-      <button id="resetFiltersBtn">条件クリア</button>
+    <div class="filter-panel">
+      <div class="search-row">
+        <input type="search" id="searchInput" placeholder="フリーワード検索（曲名・アルバム・アーティスト・備考・ジャンル / スペースでAND）" />
+        <button id="resetFiltersBtn">条件クリア</button>
+      </div>
+      <div class="dropdown-row">
+        <select id="genreFilter"><option value="">全ジャンル</option></select>
+        <select id="yearFilter"><option value="">全リリース年</option></select>
+        <select id="artistFilter"><option value="">全アーティスト名</option></select>
+        <select id="albumFilter"><option value="">全アルバム名</option></select>
+        <select id="sortSelect">
+          <option value="name-asc">曲名 (昇順 ▲)</option>
+          <option value="name-desc">曲名 (降順 ▼)</option>
+          <option value="album-asc">アルバム名 (昇順 ▲)</option>
+          <option value="album-desc">アルバム名 (降順 ▼)</option>
+          <option value="track-asc">曲番号 (昇順 1→N ▲)</option>
+          <option value="track-desc">曲番号 (降順 N→1 ▼)</option>
+          <option value="disc-asc">アルバム番号/ディスク (昇順 1→N ▲)</option>
+          <option value="disc-desc">アルバム番号/ディスク (降順 N→1 ▼)</option>
+          <option value="artist-asc">アーティスト名 (昇順 ▲)</option>
+          <option value="artist-desc">アーティスト名 (降順 ▼)</option>
+          <option value="comments-asc">備考 (昇順 ▲)</option>
+          <option value="comments-desc">備考 (降順 ▼)</option>
+          <option value="duration-asc">再生時間 (短い順 ▲)</option>
+          <option value="duration-desc">再生時間 (長い順 ▼)</option>
+          <option value="bitrate-asc">ビットレート (低い順 ▲)</option>
+          <option value="bitrate-desc">ビットレート (高い順 ▼)</option>
+          <option value="year-asc">リリース年 (古い順 ▲)</option>
+          <option value="year-desc">リリース年 (新しい順 ▼)</option>
+          <option value="dateAdded-asc">追加日 (古い順 ▲)</option>
+          <option value="dateAdded-desc">追加日 (新しい順 ▼)</option>
+          <option value="genre-asc">ジャンル (昇順 ▲)</option>
+          <option value="genre-desc">ジャンル (降順 ▼)</option>
+          <option value="size-asc">ファイルサイズ (小さい順 ▲)</option>
+          <option value="size-desc">ファイルサイズ (大きい順 ▼)</option>
+        </select>
+      </div>
     </div>
 
     <div class="stats-bar">
@@ -562,7 +571,7 @@
   </div>
 
   <script>
-    const DB_NAME = 'iTunesLibraryResponsiveDB';
+    const DB_NAME = 'iTunesLibraryFacetedDB';
     const DB_VERSION = 1;
     const STORE_TRACKS = 'tracks';
     const STORE_META = 'meta';
@@ -653,6 +662,8 @@
       searchInput: document.getElementById('searchInput'),
       genreFilter: document.getElementById('genreFilter'),
       yearFilter: document.getElementById('yearFilter'),
+      artistFilter: document.getElementById('artistFilter'),
+      albumFilter: document.getElementById('albumFilter'),
       sortSelect: document.getElementById('sortSelect'),
       resetFiltersBtn: document.getElementById('resetFiltersBtn'),
       resultCount: document.getElementById('resultCount'),
@@ -758,7 +769,7 @@
       return obj;
     }
 
-    // --- iTunes Search API（ジャケ写＆30秒試聴） ---
+    // --- iTunes Search API ---
     const mediaCache = new Map();
 
     async function fetchItunesMedia(track) {
@@ -1141,44 +1152,122 @@
       });
     }
 
-    // --- フィルタ＆描画 ---
-    function populateFilterOptions(tracks) {
-      const genres = new Set();
-      const years = new Set();
-      for (const t of tracks) {
-        if (t.genre) genres.add(t.genre);
-        if (t.year) years.add(t.year);
-      }
-      const prevGenre = dom.genreFilter.value;
-      const prevYear = dom.yearFilter.value;
-
-      dom.genreFilter.innerHTML = '<option value="">全ジャンル</option>' +
-        Array.from(genres).sort((a, b) => a.localeCompare(b, 'ja')).map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
-      dom.yearFilter.innerHTML = '<option value="">全リリース年</option>' +
-        Array.from(years).sort((a, b) => b - a).map(y => `<option value="${y}">${y}</option>`).join('');
-
-      dom.genreFilter.value = prevGenre;
-      dom.yearFilter.value = prevYear;
-    }
-
     function escapeHtml(str) {
       return String(str).replace(/[&<>"']/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s]));
+    }
+
+    // --- フリーワード＆相互連動プルダウン更新 ---
+    function matchesTerms(t, terms) {
+      for (let i = 0; i < terms.length; i++) {
+        if (!t.searchBlob.includes(terms[i])) return false;
+      }
+      return true;
+    }
+
+    function renderSelectOptions(selectEl, defaultLabel, countMap, currentVal, sortFn, formatLabelFn) {
+      const entries = Array.from(countMap.entries()).sort(sortFn);
+      let html = `<option value="">${escapeHtml(defaultLabel)} (${entries.length})</option>`;
+      let hasCurrent = currentVal === '';
+
+      for (const [val, count] of entries) {
+        const strVal = String(val);
+        if (strVal === currentVal) hasCurrent = true;
+        const label = formatLabelFn ? formatLabelFn(val, count) : `${val} (${count})`;
+        html += `<option value="${escapeHtml(strVal)}">${escapeHtml(label)}</option>`;
+      }
+
+      // 現在選択中の値が候補外になった場合も保持できるように追加
+      if (!hasCurrent && currentVal !== '') {
+        html += `<option value="${escapeHtml(currentVal)}">${escapeHtml(currentVal)} (0)</option>`;
+      }
+
+      selectEl.innerHTML = html;
+      selectEl.value = currentVal;
+      selectEl.classList.toggle('has-value', currentVal !== '');
+    }
+
+    function updateFacetedDropdowns(terms, selGenre, selYear, selArtist, selAlbum) {
+      const genreCounts = new Map();
+      const yearCounts = new Map();
+      const artistCounts = new Map();
+      const albumCounts = new Map();
+
+      for (let i = 0; i < allTracks.length; i++) {
+        const t = allTracks[i];
+        if (terms.length > 0 && !matchesTerms(t, terms)) continue;
+
+        const okGenre = !selGenre || t.genre === selGenre;
+        const okYear = !selYear || t.year === selYear;
+        const okArtist = !selArtist || t.artist === selArtist;
+        const okAlbum = !selAlbum || t.album === selAlbum;
+
+        // 自身以外の3条件＋フリーワードに一致する曲から各候補を集計
+        if (okYear && okArtist && okAlbum && t.genre) {
+          genreCounts.set(t.genre, (genreCounts.get(t.genre) || 0) + 1);
+        }
+        if (okGenre && okArtist && okAlbum && t.year) {
+          yearCounts.set(t.year, (yearCounts.get(t.year) || 0) + 1);
+        }
+        if (okGenre && okYear && okAlbum && t.artist) {
+          artistCounts.set(t.artist, (artistCounts.get(t.artist) || 0) + 1);
+        }
+        if (okGenre && okYear && okArtist && t.album) {
+          albumCounts.set(t.album, (albumCounts.get(t.album) || 0) + 1);
+        }
+      }
+
+      renderSelectOptions(
+        dom.genreFilter,
+        '全ジャンル',
+        genreCounts,
+        selGenre,
+        (a, b) => String(a[0]).localeCompare(String(b[0]), 'ja')
+      );
+
+      renderSelectOptions(
+        dom.yearFilter,
+        '全リリース年',
+        yearCounts,
+        selYear ? String(selYear) : '',
+        (a, b) => Number(b[0]) - Number(a[0]),
+        (y, c) => `${y}年 (${c})`
+      );
+
+      renderSelectOptions(
+        dom.artistFilter,
+        '全アーティスト名',
+        artistCounts,
+        selArtist,
+        (a, b) => String(a[0]).localeCompare(String(b[0]), 'ja')
+      );
+
+      renderSelectOptions(
+        dom.albumFilter,
+        '全アルバム名',
+        albumCounts,
+        selAlbum,
+        (a, b) => String(a[0]).localeCompare(String(b[0]), 'ja')
+      );
     }
 
     function applyFiltersAndRender() {
       const q = dom.searchInput.value.trim().toLowerCase();
       const terms = q ? q.split(/\s+/) : [];
-      const genre = dom.genreFilter.value;
-      const year = Number(dom.yearFilter.value) || 0;
+      const selGenre = dom.genreFilter.value;
+      const selYear = Number(dom.yearFilter.value) || 0;
+      const selArtist = dom.artistFilter.value;
+      const selAlbum = dom.albumFilter.value;
 
+      // 連動プルダウンを更新
+      updateFacetedDropdowns(terms, selGenre, selYear, selArtist, selAlbum);
+
+      // 一覧表示用の絞り込み
       filteredTracks = allTracks.filter(t => {
-        if (genre && t.genre !== genre) return false;
-        if (year && t.year !== year) return false;
-        if (terms.length > 0) {
-          for (const term of terms) {
-            if (!t.searchBlob.includes(term)) return false;
-          }
-        }
+        if (selGenre && t.genre !== selGenre) return false;
+        if (selYear && t.year !== selYear) return false;
+        if (selArtist && t.artist !== selArtist) return false;
+        if (selAlbum && t.album !== selAlbum) return false;
+        if (terms.length > 0 && !matchesTerms(t, terms)) return false;
         return true;
       });
 
@@ -1192,7 +1281,6 @@
     function renderLists() {
       const slice = filteredTracks.slice(0, displayLimit);
 
-      // PC用テーブル描画
       dom.trackTbody.innerHTML = slice.map((t, i) => `
         <tr data-idx="${i}">
           <td><button type="button" class="mini preview-btn" data-idx="${i}" title="30秒試聴">▶ 試聴</button></td>
@@ -1211,7 +1299,6 @@
         </tr>
       `).join('');
 
-      // スマホ用カードリスト描画
       dom.mobileList.innerHTML = slice.map((t, i) => {
         const trackStr = formatRatio(t.trackNo, t.trackCount);
         const discStr = formatRatio(t.discNo, t.discCount);
@@ -1241,7 +1328,6 @@
     async function refreshUI(tracks) {
       allTracks = tracks;
       displayLimit = 200;
-      populateFilterOptions(allTracks);
       applyFiltersAndRender();
       dom.dbStatus.textContent = `登録済: ${allTracks.length.toLocaleString()} 曲`;
       dom.dbStatus.classList.toggle('ok', allTracks.length > 0);
@@ -1285,15 +1371,28 @@
       }
     });
 
-    [dom.searchInput, dom.genreFilter, dom.yearFilter, dom.sortSelect].forEach(el => {
-      el.addEventListener('input', () => { displayLimit = 200; applyFiltersAndRender(); });
-      el.addEventListener('change', () => { displayLimit = 200; applyFiltersAndRender(); });
+    let searchDebounceTimer = null;
+    dom.searchInput.addEventListener('input', () => {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(() => {
+        displayLimit = 200;
+        applyFiltersAndRender();
+      }, 120);
+    });
+
+    [dom.genreFilter, dom.yearFilter, dom.artistFilter, dom.albumFilter, dom.sortSelect].forEach(el => {
+      el.addEventListener('change', () => {
+        displayLimit = 200;
+        applyFiltersAndRender();
+      });
     });
 
     dom.resetFiltersBtn.addEventListener('click', () => {
       dom.searchInput.value = '';
       dom.genreFilter.value = '';
       dom.yearFilter.value = '';
+      dom.artistFilter.value = '';
+      dom.albumFilter.value = '';
       displayLimit = 200;
       applyFiltersAndRender();
     });
@@ -1316,7 +1415,6 @@
       });
     });
 
-    // PCテーブル＆スマホカード共通クリック処理
     function bindListInteractions(containerEl, rowSelector) {
       containerEl.addEventListener('click', async (e) => {
         const previewBtn = e.target.closest('.preview-btn');
