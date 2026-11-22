@@ -1200,7 +1200,7 @@
 
       <div id="dropzone" class="dropzone">
         <strong>Library.xml または 出力済み JSON（複数可）をドラッグ＆ドロップ</strong>
-        <p>下のボタンからファイル選択も可能です（プレイリスト同梱JSONにも対応・URLは localStorage に保存）</p>
+        <p>下のボタンからファイル選択も可能です（XMLのプレイリスト抽出・プルダウン絞り込みに対応）</p>
       </div>
 
       <div class="modal-section">
@@ -1727,28 +1727,6 @@
         dateMs,
         searchBlob
       };
-    }
-
-    function normalizeTrack(raw, idx) {
-      const explicitId = Number(raw.id ?? raw.i ?? 0);
-      const id = (Number.isInteger(explicitId) && explicitId > 0) ? explicitId : (idx + 1);
-      return hydrateTrack({
-        id,
-        name: raw.Name ?? raw.n ?? '',
-        album: raw.Album ?? raw.b ?? '',
-        trackNo: Number(raw['Track Number'] ?? raw.tn ?? 0) || 0,
-        trackCount: Number(raw['Track Count'] ?? raw.tc ?? 0) || 0,
-        discNo: Number(raw['Disc Number'] ?? raw.dn ?? 0) || 0,
-        discCount: Number(raw['Disc Count'] ?? raw.dc ?? 0) || 0,
-        artist: raw.Artist ?? raw.a ?? '',
-        comments: raw.Comments ?? raw.c ?? '',
-        duration: Number(raw['Total Time'] ?? raw.d ?? 0) || 0,
-        bitrate: Number(raw['Bit Rate'] ?? raw.br ?? 0) || 0,
-        year: Number(raw.Year ?? raw.y ?? 0) || 0,
-        dateAdded: raw['Date Added'] ?? raw.da ?? '',
-        genre: raw.Genre ?? raw.g ?? '',
-        size: Number(raw.Size ?? raw.sz ?? 0) || 0
-      }, idx);
     }
 
     function normalizePlaylists(rawPlaylists) {
@@ -2549,7 +2527,6 @@
           if (idRemap.has(tid)) {
             mappedIds.push(idRemap.get(tid));
           } else if (Number.isInteger(tid) && tid > 0) {
-            // 全体IDがそのまま入っているケースも保持（後から全体トラックID集合と照合可能）
             mappedIds.push(tid);
           }
         }
@@ -2646,7 +2623,7 @@
       const safeMaxBytes = Math.max(1024, rawMaxBytes - Math.min(16384, Math.floor(rawMaxBytes * 0.01)));
       const normalizedPlaylists = normalizePlaylists(playlists);
 
-      const partBuckets = []; // [{ compactItems: string[], trackIds: number[], extraPlaylists: Array }]
+      const partBuckets = [];
       let currentItems = [];
       let currentTrackIds = [];
       let currentBytes = getByteLength('{"tracks":[],"playlists":[]}');
@@ -2765,7 +2742,6 @@
             playlists = mergePlaylistsList(playlists, partParsed.playlists);
           }
         }
-        // manifest.json 側のプレイリスト情報も統合
         if (manifestPlaylists.length > 0) {
           playlists = playlists.length > 0
             ? mergePlaylistsList(playlists, manifestPlaylists)
