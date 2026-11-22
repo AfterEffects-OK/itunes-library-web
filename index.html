@@ -262,7 +262,7 @@
       width: 100%;
       min-width: 0;
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(6, minmax(0, 1fr));
       gap: 8px;
     }
 
@@ -1108,6 +1108,7 @@
         <select id="yearFilter" aria-label="リリース年"><option value="">全リリース年</option></select>
         <select id="artistFilter" aria-label="アーティスト名"><option value="">全アーティスト名</option></select>
         <select id="albumFilter" aria-label="アルバム名"><option value="">全アルバム名</option></select>
+        <select id="playlistFilter" aria-label="プレイリスト"><option value="">全プレイリスト</option></select>
         <select id="sortSelect" aria-label="並び替え">
           <option value="name-asc">曲名 (昇順 ▲)</option>
           <option value="name-desc">曲名 (降順 ▼)</option>
@@ -1454,6 +1455,7 @@
     }
 
     let allTracks = [];
+    let allPlaylists = []; // [{ name: string, trackIds: number[] }]
     let filteredTracks = [];
     let displayLimit = 200;
     let syncConfig = loadSyncConfigFromStorage();
@@ -1477,6 +1479,7 @@
       yearFilter: document.getElementById('yearFilter'),
       artistFilter: document.getElementById('artistFilter'),
       albumFilter: document.getElementById('albumFilter'),
+      playlistFilter: document.getElementById('playlistFilter'),
       sortSelect: document.getElementById('sortSelect'),
       resetFiltersBtn: document.getElementById('resetFiltersBtn'),
       resultCount: document.getElementById('resultCount'),
@@ -1706,6 +1709,30 @@
       }, idx);
     }
 
+    function normalizePlaylists(rawPlaylists) {
+      if (!Array.isArray(rawPlaylists)) return [];
+      const mergedByName = new Map();
+
+      for (let i = 0; i < rawPlaylists.length; i++) {
+        const pl = rawPlaylists[i];
+        if (!pl || typeof pl !== 'object') continue;
+        const name = String(pl.name ?? pl.Name ?? '').trim();
+        if (!name) continue;
+
+        const rawIds = Array.isArray(pl.trackIds) ? pl.trackIds : [];
+        const idSet = mergedByName.get(name) || new Set();
+        for (let j = 0; j < rawIds.length; j++) {
+          const tid = Number(rawIds[j]);
+          if (Number.isInteger(tid) && tid > 0) idSet.add(tid);
+        }
+        mergedByName.set(name, idSet);
+      }
+
+      return Array.from(mergedByName.entries())
+        .map(([name, idSet]) => ({ name, trackIds: Array.from(idSet) }))
+        .sort((a, b) => jaCollator.compare(a.name, b.name));
+    }
+
     function toCompactTrack(t) {
       const obj = {};
       if (t.name) obj.n = t.name;
@@ -1919,6 +1946,7 @@
           dom.yearFilter.value = '';
           dom.artistFilter.value = target;
           dom.albumFilter.value = alb.hasAlbum ? alb.filterValue : '';
+          dom.playlistFilter.value = '';
           displayLimit = 200;
           applyFiltersAndRender();
         });
@@ -2104,7 +2132,37 @@
       openTrackDetailByTrack(t);
     }
 
-    // --- ストリーミングXML解析 ---
+    // --- ストリーミングXML解析（Tracks + Playlists） ---
+    function parseXmlValueElement(el) {
+      if (!el) return undefined;
+      const tag = el.tagName.toLowerCase();
+      if (tag === 'true') return true;
+      if (tag === 'false') return false;
+      if (tag === 'integer') return Number(el.textContent) || 0;
+      if (tag === 'array') {
+        const arr = [];
+        for (let i = 0; i < el.children.length; i++) {
+          arr.push(parseXmlValueElement(el.children[i]));
+        }
+        return arr;
+      }
+      if (tag === 'dict') {
+        const obj = {};
+        let currentKey = null;
+        for (let i = 0; i < el.children.length; i++) {
+          const ch = el.children[i];
+          if (ch.tagName === 'key') {
+            currentKey = ch.textContent;
+          } else if (currentKey !== null) {
+            obj[currentKey] = parseXmlValueElement(ch);
+            currentKey = null;
+          }
+        }
+        return obj;
+      }
+      return el.textContent;
+    }
+
     function parseDictXml(dictXmlString) {
       const parser = new DOMParser();
       const doc = parser.parseFromString(`<plist>${dictXmlString}</plist>`, 'text/xml');
@@ -2125,23 +2183,94 @@
       return record;
     }
 
+    function extractPlaylistsFromXmlChunk(chunk, itunesIdToInternalId) {
+      const plKeyIdx = chunk.indexOf('<key>Playlists</key>');
+      if (plKeyIdx === -1) return [];
+      const arrStart = chunk.indexOf('<array>', plKeyIdx);
+      if (arrStart === -1) return [];
+
+      let depth = 0;
+      let pos = arrStart;
+      let arrEnd = -1;
+      while (pos < chunk.length) {
+        const nextOpen = chunk.indexOf('<array>', pos);
+        const nextClose = chunk.indexOf('</array>', pos);
+        if (nextClose === -1) break;
+        if (nextOpen !== -1 && nextOpen < nextClose) {
+          depth++;
+          pos = nextOpen + 7;
+        } else {
+          depth--;
+          if (depth === 0) {
+            arrEnd = nextClose + 8;
+            break;
+          }
+          pos = nextClose + 8;
+        }
+      }
+      if (arrEnd === -1) return [];
+
+      const arrayXml = chunk.slice(arrStart, arrEnd);
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<plist>${arrayXml}</plist>`, 'text/xml');
+      const arrEl = doc.querySelector('plist > array');
+      if (!arrEl) return [];
+
+      const parsedArray = parseXmlValueElement(arrEl) || [];
+      const playlists = [];
+
+      for (let i = 0; i < parsedArray.length; i++) {
+        const pl = parsedArray[i];
+        if (!pl || typeof pl !== 'object') continue;
+        // システム標準プレイリスト（ライブラリ・ミュージック等）やフォルダを除外
+        if (pl['Master'] || pl['Folder'] || pl['Distinguished Kind'] !== undefined) continue;
+
+        const name = String(pl['Name'] || '').trim();
+        if (!name) continue;
+
+        const items = Array.isArray(pl['Playlist Items']) ? pl['Playlist Items'] : [];
+        const idSet = new Set();
+        for (let j = 0; j < items.length; j++) {
+          const rawTid = Number(items[j]?.['Track ID']);
+          const internalId = itunesIdToInternalId.get(rawTid);
+          if (internalId !== undefined) {
+            idSet.add(internalId);
+          }
+        }
+        playlists.push({ name, trackIds: Array.from(idSet) });
+      }
+
+      return normalizePlaylists(playlists);
+    }
+
     async function parseLargeXmlStream(file) {
       const reader = file.stream().getReader();
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
       let inTracks = false;
+      let tracksDone = false;
+      let tailBuffer = '';
       const tracks = [];
+      const itunesIdToInternalId = new Map();
+      let extractedPlaylists = [];
       let bytesRead = 0;
 
       setProgress(true, 'XMLをストリーミング解析中...', 0);
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          tailBuffer += buffer;
+          if (extractedPlaylists.length === 0) {
+            extractedPlaylists = extractPlaylistsFromXmlChunk(tailBuffer, itunesIdToInternalId);
+          }
+          break;
+        }
+
         bytesRead += value.byteLength;
         buffer += decoder.decode(value, { stream: true });
 
-        if (!inTracks) {
+        if (!inTracks && !tracksDone) {
           const tracksIdx = buffer.indexOf('<key>Tracks</key>');
           if (tracksIdx !== -1) {
             const dictStart = buffer.indexOf('<dict>', tracksIdx);
@@ -2181,7 +2310,12 @@
             const dictChunk = buffer.slice(openIdx, closeIdx);
             const rawObj = parseDictXml(dictChunk);
             if (rawObj && rawObj.Name) {
-              tracks.push(normalizeTrack(rawObj, tracks.length));
+              const normalized = normalizeTrack(rawObj, tracks.length);
+              tracks.push(normalized);
+              const rawItunesTrackId = Number(rawObj['Track ID']);
+              if (Number.isInteger(rawItunesTrackId) && rawItunesTrackId > 0) {
+                itunesIdToInternalId.set(rawItunesTrackId, normalized.id);
+              }
             }
             searchPos = closeIdx;
           }
@@ -2190,6 +2324,15 @@
           }
           if (buffer.includes('</plist>') || (buffer.trimStart().startsWith('</dict>') && buffer.includes('<key>Playlists</key>'))) {
             inTracks = false;
+            tracksDone = true;
+            tailBuffer += buffer;
+            buffer = '';
+          }
+        } else if (tracksDone) {
+          tailBuffer += buffer;
+          buffer = '';
+          if (tailBuffer.includes('</array>') && extractedPlaylists.length === 0) {
+            extractedPlaylists = extractPlaylistsFromXmlChunk(tailBuffer, itunesIdToInternalId);
           }
         }
 
@@ -2199,10 +2342,11 @@
 
       setProgress(true, `IndexedDB へ保存中 (${tracks.length.toLocaleString()} 曲)...`, 96);
       await saveTracksToDB(tracks, (p) => {
-        setProgress(true, `IndexedDB へ保存中... ${p}%`, 96 + Math.round(p * 0.04));
+        setProgress(true, `IndexedDB へ保存中... ${p}%`, 96 + Math.round(p * 0.03));
       });
+      await setMeta('playlists', extractedPlaylists);
       setProgress(false);
-      return tracks;
+      return { tracks, playlists: extractedPlaylists };
     }
 
     async function handleLocalFile(file) {
@@ -2216,13 +2360,15 @@
         for (let i = 0; i < arr.length; i++) {
           tracks[i] = normalizeTrack(arr[i], i);
         }
+        const playlists = Array.isArray(parsed.playlists) ? normalizePlaylists(parsed.playlists) : allPlaylists;
         setProgress(true, 'IndexedDB へ保存中...', 70);
         await saveTracksToDB(tracks);
+        await setMeta('playlists', playlists);
         setProgress(false);
-        await refreshUI(tracks);
+        await refreshUI(tracks, playlists);
       } else {
-        const tracks = await parseLargeXmlStream(file);
-        await refreshUI(tracks);
+        const { tracks, playlists } = await parseLargeXmlStream(file);
+        await refreshUI(tracks, playlists);
       }
     }
 
@@ -2236,7 +2382,7 @@
       return Math.min(2000, val);
     }
 
-    function buildSplitJsonParts(tracks, maxMb) {
+    function buildSplitJsonParts(tracks, maxMb, playlists = []) {
       const rawMaxBytes = Math.floor(maxMb * 1024 * 1024);
       const safeMaxBytes = Math.max(1024, rawMaxBytes - Math.min(16384, Math.floor(rawMaxBytes * 0.01)));
 
@@ -2277,7 +2423,8 @@
         generatedAt: new Date().toISOString(),
         maxFileSizeMB: maxMb,
         totalTracks: tracks.length,
-        parts: partNames
+        parts: partNames,
+        playlists: normalizePlaylists(playlists)
       };
       const manifestStr = JSON.stringify(manifestObj, null, 2);
       files.unshift({ name: 'manifest.json', content: manifestStr, bytes: getByteLength(manifestStr) });
@@ -2299,13 +2446,13 @@
       const estimatedParts = Math.max(1, Math.ceil(estimatedTotalBytes / (maxMb * 1024 * 1024)));
 
       dom.exportEstimateBox.innerHTML =
-        `推定合計データサイズ: <strong>${formatSize(estimatedTotalBytes)}</strong>（全 ${allTracks.length.toLocaleString()} 曲）<br>` +
+        `推定合計データサイズ: <strong>${formatSize(estimatedTotalBytes)}</strong>（全 ${allTracks.length.toLocaleString()} 曲 / ${allPlaylists.length.toLocaleString()} プレイリスト）<br>` +
         `出力構成: <strong>manifest.json</strong> ＋ <strong>part-001.json 〜 part-${String(estimatedParts).padStart(3, '0')}.json</strong>（各最大 ${maxMb} MB 以下）`;
     }
 
     // --- サーバー同期 ---
     async function syncFromServer(config) {
-      if (!config.syncUrl) return;
+      if (!config.syncUrl) return { tracks: allTracks, playlists: allPlaylists };
       const headers = {};
       if (config.token) headers['Authorization'] = `Bearer ${config.token}`;
 
@@ -2315,6 +2462,8 @@
       const data = await res.json();
 
       let merged = [];
+      let playlists = [];
+
       if (Array.isArray(data)) {
         setProgress(true, `${data.length.toLocaleString()} 曲を展開中...`, 60);
         merged = new Array(data.length);
@@ -2322,6 +2471,7 @@
           merged[idx] = normalizeTrack(data[idx], idx);
         }
       } else if (Array.isArray(data.parts)) {
+        playlists = Array.isArray(data.playlists) ? normalizePlaylists(data.playlists) : [];
         const baseUrl = config.syncUrl.slice(0, config.syncUrl.lastIndexOf('/') + 1);
         for (let i = 0; i < data.parts.length; i++) {
           const partFile = data.parts[i];
@@ -2336,6 +2486,7 @@
           }
         }
       } else if (Array.isArray(data.tracks)) {
+        playlists = Array.isArray(data.playlists) ? normalizePlaylists(data.playlists) : [];
         merged = new Array(data.tracks.length);
         for (let idx = 0; idx < data.tracks.length; idx++) {
           merged[idx] = normalizeTrack(data.tracks[idx], idx);
@@ -2346,9 +2497,10 @@
 
       setProgress(true, 'IndexedDB へ保存中...', 92);
       await saveTracksToDB(merged);
+      await setMeta('playlists', playlists);
       await setMeta('lastSyncAt', new Date().toISOString());
       setProgress(false);
-      return merged;
+      return { tracks: merged, playlists };
     }
 
     // --- ソート比較 ---
@@ -2403,6 +2555,12 @@
       return true;
     }
 
+    function getPlaylistIdSet(playlistName) {
+      if (!playlistName) return null;
+      const found = allPlaylists.find(pl => pl.name === playlistName);
+      return found ? new Set(found.trackIds) : new Set();
+    }
+
     function renderSelectOptions(selectEl, defaultLabel, countMap, currentVal, sortFn, formatLabelFn) {
       const entries = Array.from(countMap.entries()).sort(sortFn);
       const parts = [`<option value="">${escapeHtml(defaultLabel)} (${entries.length})</option>`];
@@ -2425,13 +2583,17 @@
       selectEl.classList.toggle('has-value', currentVal !== '');
     }
 
-    function updateFacetedDropdowns(terms, selGenre, selYear, selArtist, selAlbum) {
+    function updateFacetedDropdowns(terms, selGenre, selYear, selArtist, selAlbum, selPlaylist, playlistTrackSet) {
       const genreCounts = new Map();
       const yearCounts = new Map();
       const artistCounts = new Map();
       const albumCounts = new Map();
+      const playlistCounts = new Map();
       const hasTerms = terms.length > 0;
       const total = allTracks.length;
+
+      // プレイリスト別の該当曲数を集計するため、他条件（ジャンル/年/アーティスト/アルバム/検索語）に一致する曲ID集合を作る
+      const candidateTrackIds = new Set();
 
       for (let i = 0; i < total; i++) {
         const t = allTracks[i];
@@ -2441,18 +2603,34 @@
         const okYear = !selYear || t.year === selYear;
         const okArtist = !selArtist || t.artist === selArtist;
         const okAlbum = !selAlbum || t.album === selAlbum;
+        const okPlaylist = !playlistTrackSet || playlistTrackSet.has(t.id);
 
-        if (okYear && okArtist && okAlbum && t.genre) {
+        if (okGenre && okYear && okArtist && okAlbum) {
+          candidateTrackIds.add(t.id);
+        }
+
+        if (okYear && okArtist && okAlbum && okPlaylist && t.genre) {
           genreCounts.set(t.genre, (genreCounts.get(t.genre) || 0) + 1);
         }
-        if (okGenre && okArtist && okAlbum && t.year) {
+        if (okGenre && okArtist && okAlbum && okPlaylist && t.year) {
           yearCounts.set(t.year, (yearCounts.get(t.year) || 0) + 1);
         }
-        if (okGenre && okYear && okAlbum && t.artist) {
+        if (okGenre && okYear && okAlbum && okPlaylist && t.artist) {
           artistCounts.set(t.artist, (artistCounts.get(t.artist) || 0) + 1);
         }
-        if (okGenre && okYear && okArtist && t.album) {
+        if (okGenre && okYear && okArtist && okPlaylist && t.album) {
           albumCounts.set(t.album, (albumCounts.get(t.album) || 0) + 1);
+        }
+      }
+
+      for (let i = 0; i < allPlaylists.length; i++) {
+        const pl = allPlaylists[i];
+        let cnt = 0;
+        for (let j = 0; j < pl.trackIds.length; j++) {
+          if (candidateTrackIds.has(pl.trackIds[j])) cnt++;
+        }
+        if (cnt > 0 || pl.name === selPlaylist) {
+          playlistCounts.set(pl.name, cnt);
         }
       }
 
@@ -2488,6 +2666,14 @@
         selAlbum,
         (a, b) => jaPlainCollator.compare(String(a[0]), String(b[0]))
       );
+
+      renderSelectOptions(
+        dom.playlistFilter,
+        '全プレイリスト',
+        playlistCounts,
+        selPlaylist,
+        (a, b) => jaCollator.compare(String(a[0]), String(b[0]))
+      );
     }
 
     function applyFiltersAndRender() {
@@ -2498,8 +2684,10 @@
       const selYear = Number(dom.yearFilter.value) || 0;
       const selArtist = dom.artistFilter.value;
       const selAlbum = dom.albumFilter.value;
+      const selPlaylist = dom.playlistFilter.value;
+      const playlistTrackSet = getPlaylistIdSet(selPlaylist);
 
-      updateFacetedDropdowns(terms, selGenre, selYear, selArtist, selAlbum);
+      updateFacetedDropdowns(terms, selGenre, selYear, selArtist, selAlbum, selPlaylist, playlistTrackSet);
 
       const hasTerms = terms.length > 0;
       const nextFiltered = [];
@@ -2510,6 +2698,7 @@
         if (selYear && t.year !== selYear) continue;
         if (selArtist && t.artist !== selArtist) continue;
         if (selAlbum && t.album !== selAlbum) continue;
+        if (playlistTrackSet && !playlistTrackSet.has(t.id)) continue;
         if (hasTerms && !matchesTerms(t, terms)) continue;
         nextFiltered.push(t);
       }
@@ -2582,8 +2771,9 @@
       dom.loadMoreBtn.style.display = filteredTracks.length > displayLimit ? 'inline-flex' : 'none';
     }
 
-    async function refreshUI(tracks) {
+    async function refreshUI(tracks, playlists = allPlaylists) {
       allTracks = tracks;
+      allPlaylists = normalizePlaylists(playlists);
       displayLimit = 200;
       applyFiltersAndRender();
       dom.dbStatus.textContent = `${allTracks.length.toLocaleString()} 曲`;
@@ -2647,7 +2837,7 @@
       }, 90);
     });
 
-    [dom.genreFilter, dom.yearFilter, dom.artistFilter, dom.albumFilter, dom.sortSelect].forEach(el => {
+    [dom.genreFilter, dom.yearFilter, dom.artistFilter, dom.albumFilter, dom.playlistFilter, dom.sortSelect].forEach(el => {
       el.addEventListener('change', () => {
         displayLimit = 200;
         applyFiltersAndRender();
@@ -2660,6 +2850,7 @@
       dom.yearFilter.value = '';
       dom.artistFilter.value = '';
       dom.albumFilter.value = '';
+      dom.playlistFilter.value = '';
       displayLimit = 200;
       applyFiltersAndRender();
     });
@@ -2752,7 +2943,7 @@
         const dirHandle = await window.showDirectoryPicker();
         const maxMb = getValidatedMaxMb();
         setProgress(true, '最大サイズ指定でJSONを構築中...', 10);
-        const files = buildSplitJsonParts(allTracks, maxMb);
+        const files = buildSplitJsonParts(allTracks, maxMb, allPlaylists);
         for (let i = 0; i < files.length; i++) {
           const f = files[i];
           const fh = await dirHandle.getFileHandle(f.name, { create: true });
@@ -2774,7 +2965,7 @@
     document.getElementById('exportZipBtn').addEventListener('click', async () => {
       const maxMb = getValidatedMaxMb();
       setProgress(true, '最大サイズ指定でJSONを構築中...', 20);
-      const files = buildSplitJsonParts(allTracks, maxMb);
+      const files = buildSplitJsonParts(allTracks, maxMb, allPlaylists);
       const zip = new JSZip();
       for (let i = 0; i < files.length; i++) {
         zip.file(files[i].name, files[i].content);
@@ -2794,7 +2985,7 @@
 
     document.getElementById('exportEachBtn').addEventListener('click', () => {
       const maxMb = getValidatedMaxMb();
-      const files = buildSplitJsonParts(allTracks, maxMb);
+      const files = buildSplitJsonParts(allTracks, maxMb, allPlaylists);
       files.forEach((f, idx) => {
         setTimeout(() => {
           const blob = new Blob([f.content], { type: 'application/json' });
@@ -2858,14 +3049,14 @@
       document.getElementById('syncModal').classList.remove('open');
       if (syncConfig.syncUrl) {
         try {
-          const tracks = await syncFromServer(syncConfig);
-          await refreshUI(tracks);
+          const { tracks, playlists } = await syncFromServer(syncConfig);
+          await refreshUI(tracks, playlists);
         } catch (err) {
           alert(`同期エラー: ${err.message}`);
           setProgress(false);
         }
       } else {
-        await refreshUI(allTracks);
+        await refreshUI(allTracks, allPlaylists);
       }
     });
 
@@ -2876,8 +3067,8 @@
         return;
       }
       try {
-        const tracks = await syncFromServer(syncConfig);
-        await refreshUI(tracks);
+        const { tracks, playlists } = await syncFromServer(syncConfig);
+        await refreshUI(tracks, playlists);
       } catch (err) {
         alert(`同期エラー: ${err.message}`);
         setProgress(false);
@@ -2895,7 +3086,7 @@
         tx.onerror = () => reject(tx.error);
       });
       document.getElementById('dataModal').classList.remove('open');
-      await refreshUI([]);
+      await refreshUI([], []);
     });
 
     document.querySelectorAll('[data-close]').forEach(btn => {
@@ -2912,13 +3103,16 @@
 
     (async function init() {
       syncConfig = loadSyncConfigFromStorage();
-      const cached = await loadTracksFromDB();
-      await refreshUI(cached);
+      const [cached, cachedPlaylists] = await Promise.all([
+        loadTracksFromDB(),
+        getMeta('playlists')
+      ]);
+      await refreshUI(cached, cachedPlaylists || []);
 
       if (syncConfig.autoSync && syncConfig.syncUrl) {
         try {
-          const tracks = await syncFromServer(syncConfig);
-          await refreshUI(tracks);
+          const { tracks, playlists } = await syncFromServer(syncConfig);
+          await refreshUI(tracks, playlists);
         } catch (err) {
           console.warn('自動同期スキップ:', err);
           setProgress(false);
