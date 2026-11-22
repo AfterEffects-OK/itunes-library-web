@@ -773,7 +773,7 @@
       word-break: break-word;
     }
 
-    /* 詳細モーダル内のアーティストリンク・アルバム一覧 */
+    /* 詳細モーダル内のリンク・関連リスト（アルバム一覧／収録曲一覧） */
     .detail-link {
       color: var(--accent);
       text-decoration: underline;
@@ -796,7 +796,7 @@
       border: none;
     }
 
-    .artist-albums-box {
+    .related-box {
       margin-top: 14px;
       padding: 12px;
       background: var(--surface-2);
@@ -804,7 +804,7 @@
       border-radius: var(--radius-md);
     }
 
-    .artist-albums-head {
+    .related-head {
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -815,7 +815,7 @@
       color: var(--text-sub);
     }
 
-    .artist-album-list {
+    .related-list {
       display: flex;
       flex-direction: column;
       gap: 6px;
@@ -824,7 +824,7 @@
       -webkit-overflow-scrolling: touch;
     }
 
-    .artist-album-item {
+    .related-item {
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -838,21 +838,27 @@
       transition: border-color 0.14s ease, background 0.14s ease;
     }
 
-    .artist-album-item:hover {
+    .related-item:hover {
       border-color: var(--accent);
       background: var(--accent-soft);
     }
 
-    .artist-album-name {
+    .related-item.is-current {
+      border-color: rgba(110, 142, 255, 0.7);
+      background: var(--accent-soft);
+    }
+
+    .related-name {
       font-weight: 600;
       color: var(--text);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
       min-width: 0;
+      flex: 1;
     }
 
-    .artist-album-meta {
+    .related-meta {
       font-size: 11px;
       color: var(--muted);
       white-space: nowrap;
@@ -1234,7 +1240,7 @@
         </div>
       </div>
       <div id="detailBody" class="field-grid"></div>
-      <div id="artistAlbumsContainer"></div>
+      <div id="relatedPanelContainer"></div>
       <div class="modal-foot">
         <button type="button" id="fetchMediaBtn" class="primary">ジャケ写・30秒試聴を取得</button>
         <button type="button" data-close="detailModal">閉じる</button>
@@ -1493,7 +1499,7 @@
       modalMatchAlbum: document.getElementById('modalMatchAlbum'),
       modalAudio: document.getElementById('modalAudio'),
       fetchMediaBtn: document.getElementById('fetchMediaBtn'),
-      artistAlbumsContainer: document.getElementById('artistAlbumsContainer'),
+      relatedPanelContainer: document.getElementById('relatedPanelContainer'),
       syncUrlInput: document.getElementById('syncUrlInput'),
       scanQrCameraBtn: document.getElementById('scanQrCameraBtn'),
       qrImageInput: document.getElementById('qrImageInput'),
@@ -1810,20 +1816,21 @@
     function closeDetailModal() {
       document.getElementById('detailModal').classList.remove('open');
       dom.modalAudio.pause();
-      resetArtistAlbumsPanel();
+      resetRelatedPanel();
     }
 
-    function resetArtistAlbumsPanel() {
-      dom.artistAlbumsContainer.innerHTML = '';
-      dom.artistAlbumsContainer.dataset.open = 'false';
+    function resetRelatedPanel() {
+      dom.relatedPanelContainer.innerHTML = '';
+      dom.relatedPanelContainer.dataset.mode = '';
+      dom.relatedPanelContainer.dataset.key = '';
     }
 
     function toggleArtistAlbumsInModal(artistName) {
       const target = String(artistName || '').trim();
       if (!target) return;
 
-      if (dom.artistAlbumsContainer.dataset.open === 'true' && dom.artistAlbumsContainer.dataset.artist === target) {
-        resetArtistAlbumsPanel();
+      if (dom.relatedPanelContainer.dataset.mode === 'artist' && dom.relatedPanelContainer.dataset.key === target) {
+        resetRelatedPanel();
         return;
       }
 
@@ -1857,18 +1864,18 @@
       );
 
       if (albums.length === 0) {
-        dom.artistAlbumsContainer.innerHTML = `
-          <div class="artist-albums-box">
-            <div class="artist-albums-head">
+        dom.relatedPanelContainer.innerHTML = `
+          <div class="related-box">
+            <div class="related-head">
               <span>「${escapeHtml(target)}」のアルバム一覧</span>
-              <button type="button" class="mini" id="closeArtistAlbumsBtn">閉じる</button>
+              <button type="button" class="mini" id="closeRelatedBtn">閉じる</button>
             </div>
             <div class="help-text">該当するアルバムが見つかりませんでした。</div>
           </div>
         `;
-        dom.artistAlbumsContainer.dataset.open = 'true';
-        dom.artistAlbumsContainer.dataset.artist = target;
-        dom.artistAlbumsContainer.querySelector('#closeArtistAlbumsBtn')?.addEventListener('click', resetArtistAlbumsPanel);
+        dom.relatedPanelContainer.dataset.mode = 'artist';
+        dom.relatedPanelContainer.dataset.key = target;
+        dom.relatedPanelContainer.querySelector('#closeRelatedBtn')?.addEventListener('click', resetRelatedPanel);
         return;
       }
 
@@ -1877,30 +1884,30 @@
         if (alb.year) metaParts.push(`${alb.year}年`);
         metaParts.push(`${alb.count}曲`);
         return `
-          <div class="artist-album-item" data-album-idx="${idx}" title="${escapeHtml(alb.name)}">
-            <span class="artist-album-name">💿 ${escapeHtml(alb.name)}</span>
-            <span class="artist-album-meta">${escapeHtml(metaParts.join(' · '))}</span>
+          <div class="related-item" data-album-idx="${idx}" title="${escapeHtml(alb.name)}">
+            <span class="related-name">💿 ${escapeHtml(alb.name)}</span>
+            <span class="related-meta">${escapeHtml(metaParts.join(' · '))}</span>
           </div>
         `;
       }).join('');
 
-      dom.artistAlbumsContainer.innerHTML = `
-        <div class="artist-albums-box">
-          <div class="artist-albums-head">
+      dom.relatedPanelContainer.innerHTML = `
+        <div class="related-box">
+          <div class="related-head">
             <span>「${escapeHtml(target)}」のアルバム一覧 (${albums.length}件)</span>
-            <button type="button" class="mini" id="closeArtistAlbumsBtn">閉じる</button>
+            <button type="button" class="mini" id="closeRelatedBtn">閉じる</button>
           </div>
-          <div class="artist-album-list">
+          <div class="related-list">
             ${itemsHtml}
           </div>
         </div>
       `;
-      dom.artistAlbumsContainer.dataset.open = 'true';
-      dom.artistAlbumsContainer.dataset.artist = target;
+      dom.relatedPanelContainer.dataset.mode = 'artist';
+      dom.relatedPanelContainer.dataset.key = target;
 
-      dom.artistAlbumsContainer.querySelector('#closeArtistAlbumsBtn')?.addEventListener('click', resetArtistAlbumsPanel);
+      dom.relatedPanelContainer.querySelector('#closeRelatedBtn')?.addEventListener('click', resetRelatedPanel);
 
-      dom.artistAlbumsContainer.querySelectorAll('.artist-album-item').forEach((el) => {
+      dom.relatedPanelContainer.querySelectorAll('.related-item').forEach((el) => {
         el.addEventListener('click', () => {
           const alb = albums[Number(el.dataset.albumIdx)];
           if (!alb) return;
@@ -1918,12 +1925,103 @@
       });
     }
 
-    function openTrackDetail(idx) {
-      const t = filteredTracks[idx];
+    function toggleAlbumTracksInModal(track) {
+      const albumName = String(track?.album || '').trim();
+      if (!albumName) return;
+
+      const artistName = String(track?.artist || '').trim();
+      const panelKey = `${albumName}::${artistName}`;
+
+      if (dom.relatedPanelContainer.dataset.mode === 'album' && dom.relatedPanelContainer.dataset.key === panelKey) {
+        resetRelatedPanel();
+        return;
+      }
+
+      const albumLower = albumName.toLowerCase();
+      const artistLower = artistName.toLowerCase();
+
+      let matched = [];
+      if (artistLower) {
+        matched = allTracks.filter(t =>
+          (t.album || '').trim().toLowerCase() === albumLower &&
+          (t.artist || '').trim().toLowerCase() === artistLower
+        );
+      }
+      if (matched.length === 0) {
+        matched = allTracks.filter(t => (t.album || '').trim().toLowerCase() === albumLower);
+      }
+
+      const sortedTracks = matched.slice().sort((a, b) => {
+        if ((a.discNo || 0) !== (b.discNo || 0)) return (a.discNo || 0) - (b.discNo || 0);
+        if ((a.trackNo || 0) !== (b.trackNo || 0)) return (a.trackNo || 0) - (b.trackNo || 0);
+        return jaCollator.compare(a.name || '', b.name || '');
+      });
+
+      if (sortedTracks.length === 0) {
+        dom.relatedPanelContainer.innerHTML = `
+          <div class="related-box">
+            <div class="related-head">
+              <span>「${escapeHtml(albumName)}」の収録曲一覧</span>
+              <button type="button" class="mini" id="closeRelatedBtn">閉じる</button>
+            </div>
+            <div class="help-text">該当する収録曲が見つかりませんでした。</div>
+          </div>
+        `;
+        dom.relatedPanelContainer.dataset.mode = 'album';
+        dom.relatedPanelContainer.dataset.key = panelKey;
+        dom.relatedPanelContainer.querySelector('#closeRelatedBtn')?.addEventListener('click', resetRelatedPanel);
+        return;
+      }
+
+      const itemsHtml = sortedTracks.map((item, idx) => {
+        const isCurrent = track && item.id === track.id;
+        const trackNumLabel = item.trackNo ? `${item.trackNo}. ` : '';
+        const metaParts = [];
+        if (!artistLower && item.artist) metaParts.push(item.artist);
+        const durStr = formatDuration(item.duration);
+        if (durStr !== '-') metaParts.push(durStr);
+
+        return `
+          <div class="related-item ${isCurrent ? 'is-current' : ''}" data-album-track-idx="${idx}" title="${escapeHtml(item.name || '無題')}">
+            <span class="related-name">♪ ${escapeHtml(trackNumLabel + (item.name || '無題'))}</span>
+            <span class="related-meta">${escapeHtml(metaParts.join(' · '))}</span>
+          </div>
+        `;
+      }).join('');
+
+      dom.relatedPanelContainer.innerHTML = `
+        <div class="related-box">
+          <div class="related-head">
+            <span>「${escapeHtml(albumName)}」の収録曲 (${sortedTracks.length}曲)</span>
+            <button type="button" class="mini" id="closeRelatedBtn">閉じる</button>
+          </div>
+          <div class="related-list">
+            ${itemsHtml}
+          </div>
+        </div>
+      `;
+      dom.relatedPanelContainer.dataset.mode = 'album';
+      dom.relatedPanelContainer.dataset.key = panelKey;
+
+      dom.relatedPanelContainer.querySelector('#closeRelatedBtn')?.addEventListener('click', resetRelatedPanel);
+
+      dom.relatedPanelContainer.querySelectorAll('.related-item').forEach((el) => {
+        el.addEventListener('click', () => {
+          const pickedTrack = sortedTracks[Number(el.dataset.albumTrackIdx)];
+          if (!pickedTrack) return;
+          openTrackDetailByTrack(pickedTrack, { keepAlbumPanelForTrack: pickedTrack });
+        });
+      });
+    }
+
+    function openTrackDetailByTrack(t, opts = {}) {
       if (!t) return;
 
+      const shouldKeepAlbumPanel = Boolean(opts.keepAlbumPanelForTrack && t.album);
       currentDetailTrack = t;
-      resetArtistAlbumsPanel();
+      if (!shouldKeepAlbumPanel) {
+        resetRelatedPanel();
+      }
       document.getElementById('detailTitle').textContent = t.name || '無題';
       dom.artworkPanel.classList.remove('active');
       dom.modalAudio.pause();
@@ -1946,6 +2044,14 @@
 
       const detailBodyEl = document.getElementById('detailBody');
       detailBodyEl.innerHTML = rows.map(([k, v]) => {
+        if (k === 'アルバム名' && t.album) {
+          return `
+            <div class="field-label">${escapeHtml(k)}</div>
+            <div class="field-val">
+              <button type="button" class="detail-link" id="detailAlbumLink" title="このアルバムの収録曲一覧を表示">${escapeHtml(t.album)}</button>
+            </div>
+          `;
+        }
         if (k === 'アーティスト名' && t.artist) {
           return `
             <div class="field-label">${escapeHtml(k)}</div>
@@ -1960,6 +2066,13 @@
         `;
       }).join('');
 
+      const albumLinkEl = detailBodyEl.querySelector('#detailAlbumLink');
+      if (albumLinkEl) {
+        albumLinkEl.addEventListener('click', () => {
+          toggleAlbumTracksInModal(t);
+        });
+      }
+
       const artistLinkEl = detailBodyEl.querySelector('#detailArtistLink');
       if (artistLinkEl) {
         artistLinkEl.addEventListener('click', () => {
@@ -1968,6 +2081,11 @@
       }
 
       document.getElementById('detailModal').classList.add('open');
+
+      if (shouldKeepAlbumPanel) {
+        dom.relatedPanelContainer.dataset.mode = '';
+        toggleAlbumTracksInModal(t);
+      }
 
       const cacheKey = `${t.name}::${t.artist}`;
       if (mediaCache.has(cacheKey)) {
@@ -1978,6 +2096,12 @@
         dom.modalAudio.src = cachedMedia.previewUrl || '';
         dom.artworkPanel.classList.add('active');
       }
+    }
+
+    function openTrackDetail(idx) {
+      const t = filteredTracks[idx];
+      if (!t) return;
+      openTrackDetailByTrack(t);
     }
 
     // --- ストリーミングXML解析 ---
