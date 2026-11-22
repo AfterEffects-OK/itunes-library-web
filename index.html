@@ -1187,15 +1187,15 @@
       </div>
 
       <div id="dropzone" class="dropzone">
-        <strong>Library.xml または 出力済み JSON をドラッグ＆ドロップ</strong>
-        <p>下のボタンからファイル選択も可能です（JSON URL は localStorage に保存）</p>
+        <strong>Library.xml または 出力済み JSON（複数可）をドラッグ＆ドロップ</strong>
+        <p>下のボタンからファイル選択も可能です（プレイリスト同梱JSONにも対応・URLは localStorage に保存）</p>
       </div>
 
       <div class="modal-section">
         <div class="modal-section-title">ライブラリの読込・出力</div>
         <div class="modal-btn-grid">
           <label class="btn primary" for="xmlInput">XML / JSON ファイルを読込</label>
-          <input type="file" id="xmlInput" accept=".xml,.json,text/xml,application/json" hidden />
+          <input type="file" id="xmlInput" accept=".xml,.json,text/xml,application/json" multiple hidden />
           <button type="button" id="openExportBtn">JSON分割出力</button>
         </div>
       </div>
@@ -1257,7 +1257,7 @@
         <button type="button" data-close="exportModal">閉じる</button>
       </div>
       <p style="font-size:12.5px;color:var(--muted);margin-top:0;">
-        指定した<strong>最大ファイルサイズ</strong>を超えないように自動分割（<code>manifest.json</code> ＋ <code>part-001.json</code> ...）して出力します。
+        指定した<strong>最大ファイルサイズ</strong>を超えないように自動分割（<code>manifest.json</code> ＋ <code>part-001.json</code> ...）して出力します。各分割JSONにもプレイリスト情報が同梱されます。
       </p>
       <div class="form-row">
         <label for="maxFileSizeMb">1ファイルあたりの最大ファイルサイズ（MB）</label>
@@ -1690,8 +1690,10 @@
     }
 
     function normalizeTrack(raw, idx) {
+      const explicitId = Number(raw.id ?? raw.i ?? 0);
+      const id = (Number.isInteger(explicitId) && explicitId > 0) ? explicitId : (idx + 1);
       return hydrateTrack({
-        id: idx + 1,
+        id,
         name: raw.Name ?? raw.n ?? '',
         album: raw.Album ?? raw.b ?? '',
         trackNo: Number(raw['Track Number'] ?? raw.tn ?? 0) || 0,
@@ -1719,7 +1721,9 @@
         const name = String(pl.name ?? pl.Name ?? '').trim();
         if (!name) continue;
 
-        const rawIds = Array.isArray(pl.trackIds) ? pl.trackIds : [];
+        const rawIds = Array.isArray(pl.trackIds)
+          ? pl.trackIds
+          : (Array.isArray(pl.ids) ? pl.ids : []);
         const idSet = mergedByName.get(name) || new Set();
         for (let j = 0; j < rawIds.length; j++) {
           const tid = Number(rawIds[j]);
@@ -1733,8 +1737,15 @@
         .sort((a, b) => jaCollator.compare(a.name, b.name));
     }
 
+    function mergePlaylistsList(baseList, incomingList) {
+      const combined = [];
+      if (Array.isArray(baseList)) combined.push(...baseList);
+      if (Array.isArray(incomingList)) combined.push(...incomingList);
+      return normalizePlaylists(combined);
+    }
+
     function toCompactTrack(t) {
-      const obj = {};
+      const obj = { i: t.id };
       if (t.name) obj.n = t.name;
       if (t.album) obj.b = t.album;
       if (t.trackNo) obj.tn = t.trackNo;
@@ -2349,30 +2360,115 @@
       return { tracks, playlists: extractedPlaylists };
     }
 
-    async function handleLocalFile(file) {
-      document.getElementById('dataModal').classList.remove('open');
-      if (file.name.toLowerCase().endsWith('.json')) {
-        setProgress(true, 'JSONファイルを読み込み中...', 20);
-        const text = await file.text();
-        const parsed = JSON.parse(text);
-        const arr = Array.isArray(parsed) ? parsed : (parsed.tracks || []);
-        const tracks = new Array(arr.length);
-        for (let i = 0; i < arr.length; i++) {
-          tracks[i] = normalizeTrack(arr[i], i);
+    function parseJsonContentToLibrary(parsed, existingIdOffset = 0) {
+      const rawArr = Array.isArray(parsed)
+        ? parsed
+        : (Array.isArray(parsed?.tracks) ? parsed.tracks : []);
+
+      // パート内でコンパクトID（i）が重複する場合に備え、idOffset を考慮して採番
+      const idRemap = new Map();
+      const tracks = new Array(rawArr.length);
+
+      for (let i = 0; i < rawArr.length; i++) {
+        const rawItem = rawArr[i] || {};
+        const origId = Number(rawItem.id ?? rawItem.i ?? 0);
+        const nextId = existingIdOffset + i + 1;
+        if (Number.isInteger(origId) && origId > 0) {
+          idRemap.set(origId, nextId);
         }
-        const playlists = Array.isArray(parsed.playlists) ? normalizePlaylists(parsed.playlists) : allPlaylists;
-        setProgress(true, 'IndexedDB へ保存中...', 70);
-        await saveTracksToDB(tracks);
-        await setMeta('playlists', playlists);
+        tracks[i] = hydrateTrack({
+          id: nextId,
+          name: rawItem.Name ?? rawItem.n ?? '',
+          album: rawItem.Album ?? rawItem.b ?? '',
+          trackNo: Number(rawItem['Track Number'] ?? rawItem.tn ?? 0) || 0,
+          trackCount: Number(rawItem['Track Count'] ?? rawItem.tc ?? 0) || 0,
+          discNo: Number(rawItem['Disc Number'] ?? rawItem.dn ?? 0) || 0,
+          discCount: Number(rawItem['Disc Count'] ?? rawItem.dc ?? 0) || 0,
+          artist: rawItem.Artist ?? rawItem.a ?? '',
+          comments: rawItem.Comments ?? rawItem.c ?? '',
+          duration: Number(rawItem['Total Time'] ?? rawItem.d ?? 0) || 0,
+          bitrate: Number(rawItem['Bit Rate'] ?? rawItem.br ?? 0) || 0,
+          year: Number(rawItem.Year ?? rawItem.y ?? 0) || 0,
+          dateAdded: rawItem['Date Added'] ?? rawItem.da ?? '',
+          genre: rawItem.Genre ?? rawItem.g ?? '',
+          size: Number(rawItem.Size ?? rawItem.sz ?? 0) || 0
+        }, existingIdOffset + i);
+      }
+
+      const rawPlaylists = Array.isArray(parsed?.playlists) ? parsed.playlists : [];
+      const remappedPlaylists = rawPlaylists.map((pl) => {
+        if (!pl || typeof pl !== 'object') return null;
+        const name = String(pl.name ?? pl.Name ?? '').trim();
+        if (!name) return null;
+        const rawIds = Array.isArray(pl.trackIds)
+          ? pl.trackIds
+          : (Array.isArray(pl.ids) ? pl.ids : []);
+        const mappedIds = [];
+        for (let j = 0; j < rawIds.length; j++) {
+          const tid = Number(rawIds[j]);
+          if (idRemap.has(tid)) {
+            mappedIds.push(idRemap.get(tid));
+          } else if (existingIdOffset === 0 && Number.isInteger(tid) && tid > 0) {
+            mappedIds.push(tid);
+          }
+        }
+        return { name, trackIds: mappedIds };
+      }).filter(Boolean);
+
+      return {
+        tracks,
+        playlists: normalizePlaylists(remappedPlaylists)
+      };
+    }
+
+    async function handleLocalFiles(fileList) {
+      const files = Array.from(fileList || []).filter(Boolean);
+      if (!files.length) return;
+
+      document.getElementById('dataModal').classList.remove('open');
+
+      // 複数ファイルまたは単一JSON読み込み
+      const jsonFiles = files.filter(f => f.name.toLowerCase().endsWith('.json'));
+      const xmlFiles = files.filter(f => !f.name.toLowerCase().endsWith('.json'));
+
+      if (jsonFiles.length > 0 && xmlFiles.length === 0) {
+        setProgress(true, `JSONファイルを読み込み中 (${jsonFiles.length}件)...`, 15);
+        let mergedTracks = [];
+        let mergedPlaylists = [];
+
+        for (let i = 0; i < jsonFiles.length; i++) {
+          const f = jsonFiles[i];
+          const pct = 15 + Math.round(((i + 0.5) / jsonFiles.length) * 55);
+          setProgress(true, `JSON解析中 (${i + 1}/${jsonFiles.length}: ${f.name})...`, pct);
+          const text = await f.text();
+          const parsed = JSON.parse(text);
+          const partResult = parseJsonContentToLibrary(parsed, mergedTracks.length);
+          mergedTracks = mergedTracks.concat(partResult.tracks);
+          mergedPlaylists = mergePlaylistsList(mergedPlaylists, partResult.playlists);
+        }
+
+        // プレイリスト情報を含まないJSON単体読み込みの場合は既存プレイリストを保持
+        const finalPlaylists = mergedPlaylists.length > 0 ? mergedPlaylists : allPlaylists;
+
+        setProgress(true, `IndexedDB へ保存中 (${mergedTracks.length.toLocaleString()} 曲)...`, 80);
+        await saveTracksToDB(mergedTracks);
+        await setMeta('playlists', finalPlaylists);
         setProgress(false);
+        await refreshUI(mergedTracks, finalPlaylists);
+        return;
+      }
+
+      // XMLファイル（またはXML+JSON混在）
+      for (let i = 0; i < xmlFiles.length; i++) {
+        const { tracks, playlists } = await parseLargeXmlStream(xmlFiles[i]);
         await refreshUI(tracks, playlists);
-      } else {
-        const { tracks, playlists } = await parseLargeXmlStream(file);
-        await refreshUI(tracks, playlists);
+      }
+      if (jsonFiles.length > 0) {
+        await handleLocalFiles(jsonFiles);
       }
     }
 
-    // --- 最大ファイルサイズ指定のJSON分割生成 ---
+    // --- 最大ファイルサイズ指定のJSON分割生成（manifest + 各partにplaylistsを同梱） ---
     const textEncoder = new TextEncoder();
     function getByteLength(str) { return textEncoder.encode(str).byteLength; }
 
@@ -2382,49 +2478,92 @@
       return Math.min(2000, val);
     }
 
+    function buildPlaylistsForPart(trackIdSet, sourcePlaylists) {
+      const normalized = normalizePlaylists(sourcePlaylists);
+      const result = [];
+      for (let i = 0; i < normalized.length; i++) {
+        const pl = normalized[i];
+        const matchedIds = [];
+        for (let j = 0; j < pl.trackIds.length; j++) {
+          const tid = pl.trackIds[j];
+          if (trackIdSet.has(tid)) matchedIds.push(tid);
+        }
+        if (matchedIds.length > 0) {
+          result.push({ name: pl.name, trackIds: matchedIds });
+        }
+      }
+      return result;
+    }
+
+    function buildPartJsonString(compactItems, partPlaylists) {
+      const playlistsPayload = JSON.stringify(partPlaylists || []);
+      return `{"tracks":[${compactItems.join(',')}],"playlists":${playlistsPayload}}`;
+    }
+
     function buildSplitJsonParts(tracks, maxMb, playlists = []) {
       const rawMaxBytes = Math.floor(maxMb * 1024 * 1024);
       const safeMaxBytes = Math.max(1024, rawMaxBytes - Math.min(16384, Math.floor(rawMaxBytes * 0.01)));
+      const normalizedPlaylists = normalizePlaylists(playlists);
 
-      const parts = [];
+      const partBuckets = []; // [{ compactItems: string[], trackIds: number[] }]
       let currentItems = [];
-      let currentBytes = 2;
+      let currentTrackIds = [];
+      let currentBytes = getByteLength('{"tracks":[],"playlists":[]}');
 
       for (let i = 0; i < tracks.length; i++) {
-        const compact = toCompactTrack(tracks[i]);
+        const track = tracks[i];
+        const compact = toCompactTrack(track);
         const serialized = JSON.stringify(compact);
         const itemBytes = getByteLength(serialized);
         const separatorBytes = currentItems.length > 0 ? 1 : 0;
 
         if (currentItems.length > 0 && currentBytes + separatorBytes + itemBytes > safeMaxBytes) {
-          parts.push(`[${currentItems.join(',')}]`);
+          partBuckets.push({ compactItems: currentItems, trackIds: currentTrackIds });
           currentItems = [serialized];
-          currentBytes = 2 + itemBytes;
+          currentTrackIds = [track.id];
+          currentBytes = getByteLength('{"tracks":[],"playlists":[]}') + itemBytes;
         } else {
           currentItems.push(serialized);
+          currentTrackIds.push(track.id);
           currentBytes += separatorBytes + itemBytes;
         }
       }
       if (currentItems.length > 0) {
-        parts.push(`[${currentItems.join(',')}]`);
+        partBuckets.push({ compactItems: currentItems, trackIds: currentTrackIds });
       }
 
       const files = [];
       const partNames = [];
-      for (let idx = 0; idx < parts.length; idx++) {
-        const jsonStr = parts[idx];
+      for (let idx = 0; idx < partBuckets.length; idx++) {
+        const bucket = partBuckets[idx];
+        const idSet = new Set(bucket.trackIds);
+        const partPlaylists = buildPlaylistsForPart(idSet, normalizedPlaylists);
+        let jsonStr = buildPartJsonString(bucket.compactItems, partPlaylists);
+
+        // 万が一プレイリスト同梱でsafeMaxBytesをわずかに超える場合は、該当パートのプレイリストを次パートへ逃がしてサイズ厳守
+        let activePlaylists = partPlaylists;
+        const deferredPlaylists = [];
+        while (getByteLength(jsonStr) > safeMaxBytes && activePlaylists.length > 0) {
+          deferredPlaylists.unshift(activePlaylists.pop());
+          jsonStr = buildPartJsonString(bucket.compactItems, activePlaylists);
+        }
+        if (deferredPlaylists.length > 0 && idx + 1 < partBuckets.length) {
+          const nextBucket = partBuckets[idx + 1];
+          nextBucket.extraPlaylists = mergePlaylistsList(nextBucket.extraPlaylists, deferredPlaylists);
+        }
+
         const fileName = `part-${String(idx + 1).padStart(3, '0')}.json`;
         partNames.push(fileName);
         files.push({ name: fileName, content: jsonStr, bytes: getByteLength(jsonStr) });
       }
 
       const manifestObj = {
-        version: 1,
+        version: 2,
         generatedAt: new Date().toISOString(),
         maxFileSizeMB: maxMb,
         totalTracks: tracks.length,
         parts: partNames,
-        playlists: normalizePlaylists(playlists)
+        playlists: normalizedPlaylists
       };
       const manifestStr = JSON.stringify(manifestObj, null, 2);
       files.unshift({ name: 'manifest.json', content: manifestStr, bytes: getByteLength(manifestStr) });
@@ -2442,11 +2581,12 @@
       for (let i = 0; i < sampleCount; i++) {
         sampleBytes += getByteLength(JSON.stringify(toCompactTrack(allTracks[i]))) + 1;
       }
-      const estimatedTotalBytes = Math.ceil((sampleBytes / sampleCount) * allTracks.length) + 2;
+      const playlistsBytes = getByteLength(JSON.stringify(normalizePlaylists(allPlaylists)));
+      const estimatedTotalBytes = Math.ceil((sampleBytes / sampleCount) * allTracks.length) + playlistsBytes + 64;
       const estimatedParts = Math.max(1, Math.ceil(estimatedTotalBytes / (maxMb * 1024 * 1024)));
 
       dom.exportEstimateBox.innerHTML =
-        `推定合計データサイズ: <strong>${formatSize(estimatedTotalBytes)}</strong>（全 ${allTracks.length.toLocaleString()} 曲 / ${allPlaylists.length.toLocaleString()} プレイリスト）<br>` +
+        `推定合計データサイズ: <strong>${formatSize(estimatedTotalBytes)}</strong>（全 ${allTracks.length.toLocaleString()} 曲 / ${allPlaylists.length.toLocaleString()} プレイリスト同梱）<br>` +
         `出力構成: <strong>manifest.json</strong> ＋ <strong>part-001.json 〜 part-${String(estimatedParts).padStart(3, '0')}.json</strong>（各最大 ${maxMb} MB 以下）`;
     }
 
@@ -2466,10 +2606,9 @@
 
       if (Array.isArray(data)) {
         setProgress(true, `${data.length.toLocaleString()} 曲を展開中...`, 60);
-        merged = new Array(data.length);
-        for (let idx = 0; idx < data.length; idx++) {
-          merged[idx] = normalizeTrack(data[idx], idx);
-        }
+        const parsedRes = parseJsonContentToLibrary(data, 0);
+        merged = parsedRes.tracks;
+        playlists = parsedRes.playlists;
       } else if (Array.isArray(data.parts)) {
         playlists = Array.isArray(data.playlists) ? normalizePlaylists(data.playlists) : [];
         const baseUrl = config.syncUrl.slice(0, config.syncUrl.lastIndexOf('/') + 1);
@@ -2480,17 +2619,17 @@
           setProgress(true, `分割ファイル取得中 (${i + 1}/${data.parts.length}: ${partFile})...`, pct);
           const pRes = await fetch(partUrl, { headers });
           if (!pRes.ok) throw new Error(`${partFile} 取得失敗 (${pRes.status})`);
-          const partArr = await pRes.json();
-          for (let k = 0; k < partArr.length; k++) {
-            merged.push(normalizeTrack(partArr[k], merged.length));
+          const partJson = await pRes.json();
+          const partParsed = parseJsonContentToLibrary(partJson, merged.length);
+          merged = merged.concat(partParsed.tracks);
+          if (playlists.length === 0 && partParsed.playlists.length > 0) {
+            playlists = mergePlaylistsList(playlists, partParsed.playlists);
           }
         }
       } else if (Array.isArray(data.tracks)) {
-        playlists = Array.isArray(data.playlists) ? normalizePlaylists(data.playlists) : [];
-        merged = new Array(data.tracks.length);
-        for (let idx = 0; idx < data.tracks.length; idx++) {
-          merged[idx] = normalizeTrack(data.tracks[idx], idx);
-        }
+        const parsedRes = parseJsonContentToLibrary(data, 0);
+        merged = parsedRes.tracks;
+        playlists = parsedRes.playlists;
       } else {
         throw new Error('対応していないJSONフォーマットです');
       }
@@ -2592,7 +2731,6 @@
       const hasTerms = terms.length > 0;
       const total = allTracks.length;
 
-      // プレイリスト別の該当曲数を集計するため、他条件（ジャンル/年/アーティスト/アルバム/検索語）に一致する曲ID集合を作る
       const candidateTrackIds = new Set();
 
       for (let i = 0; i < total; i++) {
@@ -2794,10 +2932,10 @@
     });
 
     dom.xmlInput.addEventListener('change', async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
+      const files = e.target.files;
+      if (!files || !files.length) return;
       try {
-        await handleLocalFile(file);
+        await handleLocalFiles(files);
       } catch (err) {
         alert(`読込エラー: ${err.message}`);
         setProgress(false);
@@ -2818,10 +2956,10 @@
       });
     });
     dom.dropzone.addEventListener('drop', async (e) => {
-      const file = e.dataTransfer?.files?.[0];
-      if (!file) return;
+      const files = e.dataTransfer?.files;
+      if (!files || !files.length) return;
       try {
-        await handleLocalFile(file);
+        await handleLocalFiles(files);
       } catch (err) {
         alert(`読込エラー: ${err.message}`);
         setProgress(false);
