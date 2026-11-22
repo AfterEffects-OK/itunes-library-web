@@ -1471,6 +1471,7 @@
 
     let allTracks = [];
     let allPlaylists = []; // [{ name: string, trackIds: number[] }]
+    let trackPlaylistsMap = new Map(); // track.id -> string[]
     let filteredTracks = [];
     let displayLimit = 200;
     let syncConfig = loadSyncConfigFromStorage();
@@ -1531,16 +1532,16 @@
 
     function resolvePartUrl(partFile, baseSyncUrl) {
       if (/^https?:\/\//i.test(partFile)) return partFile;
+      if (baseSyncUrl) {
+        try {
+          return new URL(partFile, baseSyncUrl).href;
+        } catch (_) {
+          // fallback
+        }
+      }
       try {
         return new URL(partFile, window.location.href).href;
       } catch (e) {
-        if (baseSyncUrl) {
-          try {
-            return new URL(partFile, baseSyncUrl).href;
-          } catch (_) {
-            // fallback
-          }
-        }
         return partFile;
       }
     }
@@ -1708,7 +1709,7 @@
       const searchBlob = `${name}\u0000${album}\u0000${artist}\u0000${comments}\u0000${genre}`.toLowerCase();
 
       return {
-        id: base.id || (idx + 1),
+        id: Number(base.id) > 0 ? Number(base.id) : (idx + 1),
         name,
         album,
         trackNo,
@@ -1781,6 +1782,20 @@
       if (Array.isArray(baseList)) combined.push(...baseList);
       if (Array.isArray(incomingList)) combined.push(...incomingList);
       return normalizePlaylists(combined);
+    }
+
+    function rebuildTrackPlaylistsIndex(playlists) {
+      const map = new Map();
+      for (let i = 0; i < playlists.length; i++) {
+        const pl = playlists[i];
+        for (let j = 0; j < pl.trackIds.length; j++) {
+          const tid = pl.trackIds[j];
+          const arr = map.get(tid) || [];
+          if (!arr.includes(pl.name)) arr.push(pl.name);
+          map.set(tid, arr);
+        }
+      }
+      trackPlaylistsMap = map;
     }
 
     function toCompactTrack(t) {
@@ -2158,12 +2173,15 @@
       dom.modalAudio.pause();
       dom.modalAudio.src = '';
 
+      const belongsPlaylists = trackPlaylistsMap.get(t.id) || [];
+
       const rows = [
         ['曲名', t.name],
         ['アルバム名', t.album],
         ['曲番号', formatRatio(t.trackNo, t.trackCount)],
         ['アルバム番号', formatRatio(t.discNo, t.discCount)],
         ['アーティスト名', t.artist],
+        ['プレイリスト', belongsPlaylists.length ? belongsPlaylists.join(' / ') : '-'],
         ['備考', t.comments],
         ['再生時間', formatDuration(t.duration)],
         ['ビットレート', t.bitrate ? `${t.bitrate} kbps` : '-'],
@@ -2320,30 +2338,38 @@
       if (!arrEl) return [];
 
       const parsedArray = parseXmlValueElement(arrEl) || [];
-      const playlists = [];
 
-      for (let i = 0; i < parsedArray.length; i++) {
-        const pl = parsedArray[i];
-        if (!pl || typeof pl !== 'object') continue;
-        // システム標準プレイリスト（ライブラリ・ミュージック等）やフォルダを除外
-        if (pl['Master'] || pl['Folder'] || pl['Distinguished Kind'] !== undefined) continue;
-
-        const name = String(pl['Name'] || '').trim();
-        if (!name) continue;
-
-        const items = Array.isArray(pl['Playlist Items']) ? pl['Playlist Items'] : [];
-        const idSet = new Set();
-        for (let j = 0; j < items.length; j++) {
-          const rawTid = Number(items[j]?.['Track ID']);
-          const internalId = itunesIdToInternalId.get(rawTid);
-          if (internalId !== undefined) {
-            idSet.add(internalId);
+      const buildFromFilter = (strictUserOnly) => {
+        const list = [];
+        for (let i = 0; i < parsedArray.length; i++) {
+          const pl = parsedArray[i];
+          if (!pl || typeof pl !== 'object') continue;
+          if (strictUserOnly) {
+            if (pl['Master'] || pl['Folder'] || pl['Distinguished Kind'] !== undefined) continue;
+          } else {
+            if (pl['Master'] || pl['Folder']) continue;
           }
-        }
-        playlists.push({ name, trackIds: Array.from(idSet) });
-      }
 
-      return normalizePlaylists(playlists);
+          const name = String(pl['Name'] || '').trim();
+          if (!name) continue;
+
+          const items = Array.isArray(pl['Playlist Items']) ? pl['Playlist Items'] : [];
+          const idSet = new Set();
+          for (let j = 0; j < items.length; j++) {
+            const rawTid = Number(items[j]?.['Track ID']);
+            const internalId = itunesIdToInternalId.get(rawTid);
+            if (internalId !== undefined) {
+              idSet.add(internalId);
+            }
+          }
+          list.push({ name, trackIds: Array.from(idSet) });
+        }
+        return normalizePlaylists(list);
+      };
+
+      const userPlaylists = buildFromFilter(true);
+      if (userPlaylists.length > 0) return userPlaylists;
+      return buildFromFilter(false);
     }
 
     async function parseLargeXmlStream(file) {
@@ -2413,11 +2439,30 @@
             const dictChunk = buffer.slice(openIdx, closeIdx);
             const rawObj = parseDictXml(dictChunk);
             if (rawObj && rawObj.Name) {
-              const normalized = normalizeTrack(rawObj, tracks.length);
+              // XML側の Track ID を保持しつつ、内部トラックID（tracks.length + 1）にマッピング
+              const internalId = tracks.length + 1;
+              const normalized = hydrateTrack({
+                id: internalId,
+                name: rawObj.Name || '',
+                album: rawObj.Album || '',
+                trackNo: Number(rawObj['Track Number'] || 0) || 0,
+                trackCount: Number(rawObj['Track Count'] || 0) || 0,
+                discNo: Number(rawObj['Disc Number'] || 0) || 0,
+                discCount: Number(rawObj['Disc Count'] || 0) || 0,
+                artist: rawObj.Artist || '',
+                comments: rawObj.Comments || '',
+                duration: Number(rawObj['Total Time'] || 0) || 0,
+                bitrate: Number(rawObj['Bit Rate'] || 0) || 0,
+                year: Number(rawObj.Year || 0) || 0,
+                dateAdded: rawObj['Date Added'] || '',
+                genre: rawObj.Genre || '',
+                size: Number(rawObj.Size || 0) || 0
+              }, tracks.length);
               tracks.push(normalized);
+
               const rawItunesTrackId = Number(rawObj['Track ID']);
               if (Number.isInteger(rawItunesTrackId) && rawItunesTrackId > 0) {
-                itunesIdToInternalId.set(rawItunesTrackId, normalized.id);
+                itunesIdToInternalId.set(rawItunesTrackId, internalId);
               }
             }
             searchPos = closeIdx;
@@ -2503,7 +2548,8 @@
           const tid = Number(rawIds[j]);
           if (idRemap.has(tid)) {
             mappedIds.push(idRemap.get(tid));
-          } else if (existingIdOffset === 0 && Number.isInteger(tid) && tid > 0) {
+          } else if (Number.isInteger(tid) && tid > 0) {
+            // 全体IDがそのまま入っているケースも保持（後から全体トラックID集合と照合可能）
             mappedIds.push(tid);
           }
         }
@@ -2536,6 +2582,9 @@
           setProgress(true, `JSON解析中 (${i + 1}/${jsonFiles.length}: ${f.name})...`, pct);
           const text = await f.text();
           const parsed = JSON.parse(text);
+          if (Array.isArray(parsed?.playlists)) {
+            mergedPlaylists = mergePlaylistsList(mergedPlaylists, parsed.playlists);
+          }
           const partResult = parseJsonContentToLibrary(parsed, mergedTracks.length);
           mergedTracks = mergedTracks.concat(partResult.tracks);
           mergedPlaylists = mergePlaylistsList(mergedPlaylists, partResult.playlists);
@@ -2701,7 +2750,7 @@
         merged = parsedRes.tracks;
         playlists = parsedRes.playlists;
       } else if (Array.isArray(data.parts)) {
-        playlists = Array.isArray(data.playlists) ? normalizePlaylists(data.playlists) : [];
+        const manifestPlaylists = Array.isArray(data.playlists) ? normalizePlaylists(data.playlists) : [];
         for (let i = 0; i < data.parts.length; i++) {
           const partFile = data.parts[i];
           const partUrl = resolvePartUrl(partFile, config.syncUrl);
@@ -2715,6 +2764,12 @@
           if (partParsed.playlists.length > 0) {
             playlists = mergePlaylistsList(playlists, partParsed.playlists);
           }
+        }
+        // manifest.json 側のプレイリスト情報も統合
+        if (manifestPlaylists.length > 0) {
+          playlists = playlists.length > 0
+            ? mergePlaylistsList(playlists, manifestPlaylists)
+            : manifestPlaylists;
         }
       } else if (Array.isArray(data.tracks)) {
         const parsedRes = parseJsonContentToLibrary(data, 0);
@@ -3002,6 +3057,7 @@
     async function refreshUI(tracks, playlists = allPlaylists) {
       allTracks = tracks;
       allPlaylists = normalizePlaylists(playlists);
+      rebuildTrackPlaylistsIndex(allPlaylists);
       displayLimit = 200;
       applyFiltersAndRender();
       dom.dbStatus.textContent = `${allTracks.length.toLocaleString()} 曲`;
