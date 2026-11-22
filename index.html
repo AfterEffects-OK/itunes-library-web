@@ -149,6 +149,11 @@
       border-color: var(--border-strong);
     }
 
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
     button.primary, .btn.primary {
       background: var(--accent);
       border-color: var(--accent);
@@ -156,7 +161,7 @@
       font-weight: 600;
     }
 
-    button.primary:hover, .btn.primary:hover {
+    button.primary:hover:not(:disabled), .btn.primary:hover {
       background: var(--accent-hover);
     }
 
@@ -588,6 +593,13 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+
+    .player-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
     }
 
     .player-bar audio {
@@ -1024,7 +1036,7 @@
       }
 
       .player-meta {
-        width: calc(100% - 104px);
+        width: calc(100% - 140px);
         flex: 1;
       }
 
@@ -1221,7 +1233,10 @@
       <div id="barTrackTitle" class="player-title">-</div>
       <div id="barTrackArtist" class="player-sub">-</div>
     </div>
-    <button type="button" id="closePlayerBtn" class="mini is-stopping">停止</button>
+    <div class="player-controls">
+      <button type="button" id="nextTrackBtn" class="mini" title="絞り込み結果から次の曲を試聴">次へ ▶</button>
+      <button type="button" id="closePlayerBtn" class="mini is-stopping">停止</button>
+    </div>
     <audio id="barAudio" controls playsinline></audio>
   </div>
 
@@ -1461,6 +1476,7 @@
     let syncConfig = loadSyncConfigFromStorage();
     let currentDetailTrack = null;
     let activePlayingId = null;
+    let isAdvancingTrack = false;
 
     // QRコード読取用状態
     let qrStream = null;
@@ -1495,6 +1511,7 @@
       barTrackTitle: document.getElementById('barTrackTitle'),
       barTrackArtist: document.getElementById('barTrackArtist'),
       barAudio: document.getElementById('barAudio'),
+      nextTrackBtn: document.getElementById('nextTrackBtn'),
       closePlayerBtn: document.getElementById('closePlayerBtn'),
       artworkPanel: document.getElementById('artworkPanel'),
       modalArtwork: document.getElementById('modalArtwork'),
@@ -1511,6 +1528,22 @@
       qrStatusText: document.getElementById('qrStatusText'),
       stopQrCameraBtn: document.getElementById('stopQrCameraBtn'),
     };
+
+    function resolvePartUrl(partFile, baseSyncUrl) {
+      if (/^https?:\/\//i.test(partFile)) return partFile;
+      try {
+        return new URL(partFile, window.location.href).href;
+      } catch (e) {
+        if (baseSyncUrl) {
+          try {
+            return new URL(partFile, baseSyncUrl).href;
+          } catch (_) {
+            // fallback
+          }
+        }
+        return partFile;
+      }
+    }
 
     function createQrDetector() {
       if (!('BarcodeDetector' in window)) return null;
@@ -1601,7 +1634,13 @@
         return;
       }
 
-      const bitmap = await createImageBitmap(file);
+      let bitmap;
+      try {
+        bitmap = await createImageBitmap(file);
+      } catch (err) {
+        throw new Error(`画像を読み込めませんでした (${err.message || '非対応フォーマット'})`);
+      }
+
       try {
         const barcodes = await detector.detect(bitmap);
         if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
@@ -1610,7 +1649,7 @@
           alert('画像内にQRコードを検出できませんでした。');
         }
       } finally {
-        if (typeof bitmap.close === 'function') bitmap.close();
+        if (bitmap && typeof bitmap.close === 'function') bitmap.close();
       }
     }
 
@@ -1800,6 +1839,7 @@
     }
 
     function stopMiniPlayer() {
+      isAdvancingTrack = false;
       dom.barAudio.pause();
       dom.barAudio.src = '';
       activePlayingId = null;
@@ -1822,6 +1862,33 @@
       renderLists();
     }
 
+    async function startTrackPreviewByTrack(track, btnEl = null) {
+      if (!track) return false;
+
+      const origText = btnEl ? btnEl.textContent : '';
+      if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.textContent = '…';
+      }
+      try {
+        const media = await fetchItunesMedia(track);
+        if (!media || !media.previewUrl) {
+          return false;
+        }
+        playInMiniBar(media, track);
+        return true;
+      } catch (err) {
+        throw err;
+      } finally {
+        if (btnEl) {
+          btnEl.disabled = false;
+          if (activePlayingId !== track.id) {
+            btnEl.textContent = origText;
+          }
+        }
+      }
+    }
+
     async function handlePreviewClick(idx, btnEl) {
       const t = filteredTracks[idx];
       if (!t) return;
@@ -1831,23 +1898,48 @@
         return;
       }
 
-      const origText = btnEl.textContent;
-      btnEl.disabled = true;
-      btnEl.textContent = '…';
       try {
-        const media = await fetchItunesMedia(t);
-        if (!media || !media.previewUrl) {
+        const ok = await startTrackPreviewByTrack(t, btnEl);
+        if (!ok) {
           alert('試聴音源が見つかりませんでした。');
-        } else {
-          playInMiniBar(media, t);
         }
       } catch (err) {
         alert(`試聴取得エラー: ${err.message}`);
-      } finally {
-        btnEl.disabled = false;
-        if (activePlayingId !== t.id) {
-          btnEl.textContent = origText;
+      }
+    }
+
+    async function playNextFilteredTrack(autoFromEnd = false) {
+      if (isAdvancingTrack || !filteredTracks.length) {
+        if (autoFromEnd) stopMiniPlayer();
+        return;
+      }
+      isAdvancingTrack = true;
+      dom.nextTrackBtn.disabled = true;
+
+      try {
+        const curIdx = filteredTracks.findIndex(t => t.id === activePlayingId);
+        const startIdx = curIdx >= 0 ? curIdx + 1 : 0;
+
+        for (let offset = 0; offset < filteredTracks.length; offset++) {
+          const candidate = filteredTracks[(startIdx + offset) % filteredTracks.length];
+          if (!candidate) continue;
+          if (offset > 0 && candidate.id === activePlayingId) break;
+          try {
+            const ok = await startTrackPreviewByTrack(candidate);
+            if (ok) return;
+          } catch (_) {
+            // 次の候補曲を続行
+          }
         }
+
+        if (!autoFromEnd) {
+          alert('試聴可能な次の曲が見つかりませんでした。');
+        } else {
+          stopMiniPlayer();
+        }
+      } finally {
+        isAdvancingTrack = false;
+        dom.nextTrackBtn.disabled = false;
       }
     }
 
@@ -2333,7 +2425,10 @@
           if (searchPos > 0) {
             buffer = buffer.slice(searchPos);
           }
-          if (buffer.includes('</plist>') || (buffer.trimStart().startsWith('</dict>') && buffer.includes('<key>Playlists</key>'))) {
+
+          const hasNoMoreDict = buffer.indexOf('<dict>') === -1;
+          const playlistsIdx = buffer.indexOf('<key>Playlists</key>');
+          if (buffer.includes('</plist>') || (hasNoMoreDict && playlistsIdx !== -1)) {
             inTracks = false;
             tracksDone = true;
             tailBuffer += buffer;
@@ -2427,7 +2522,6 @@
 
       document.getElementById('dataModal').classList.remove('open');
 
-      // 複数ファイルまたは単一JSON読み込み
       const jsonFiles = files.filter(f => f.name.toLowerCase().endsWith('.json'));
       const xmlFiles = files.filter(f => !f.name.toLowerCase().endsWith('.json'));
 
@@ -2447,7 +2541,6 @@
           mergedPlaylists = mergePlaylistsList(mergedPlaylists, partResult.playlists);
         }
 
-        // プレイリスト情報を含まないJSON単体読み込みの場合は既存プレイリストを保持
         const finalPlaylists = mergedPlaylists.length > 0 ? mergedPlaylists : allPlaylists;
 
         setProgress(true, `IndexedDB へ保存中 (${mergedTracks.length.toLocaleString()} 曲)...`, 80);
@@ -2458,7 +2551,6 @@
         return;
       }
 
-      // XMLファイル（またはXML+JSON混在）
       for (let i = 0; i < xmlFiles.length; i++) {
         const { tracks, playlists } = await parseLargeXmlStream(xmlFiles[i]);
         await refreshUI(tracks, playlists);
@@ -2505,7 +2597,7 @@
       const safeMaxBytes = Math.max(1024, rawMaxBytes - Math.min(16384, Math.floor(rawMaxBytes * 0.01)));
       const normalizedPlaylists = normalizePlaylists(playlists);
 
-      const partBuckets = []; // [{ compactItems: string[], trackIds: number[] }]
+      const partBuckets = []; // [{ compactItems: string[], trackIds: number[], extraPlaylists: Array }]
       let currentItems = [];
       let currentTrackIds = [];
       let currentBytes = getByteLength('{"tracks":[],"playlists":[]}');
@@ -2518,7 +2610,7 @@
         const separatorBytes = currentItems.length > 0 ? 1 : 0;
 
         if (currentItems.length > 0 && currentBytes + separatorBytes + itemBytes > safeMaxBytes) {
-          partBuckets.push({ compactItems: currentItems, trackIds: currentTrackIds });
+          partBuckets.push({ compactItems: currentItems, trackIds: currentTrackIds, extraPlaylists: [] });
           currentItems = [serialized];
           currentTrackIds = [track.id];
           currentBytes = getByteLength('{"tracks":[],"playlists":[]}') + itemBytes;
@@ -2529,7 +2621,7 @@
         }
       }
       if (currentItems.length > 0) {
-        partBuckets.push({ compactItems: currentItems, trackIds: currentTrackIds });
+        partBuckets.push({ compactItems: currentItems, trackIds: currentTrackIds, extraPlaylists: [] });
       }
 
       const files = [];
@@ -2537,11 +2629,10 @@
       for (let idx = 0; idx < partBuckets.length; idx++) {
         const bucket = partBuckets[idx];
         const idSet = new Set(bucket.trackIds);
-        const partPlaylists = buildPlaylistsForPart(idSet, normalizedPlaylists);
-        let jsonStr = buildPartJsonString(bucket.compactItems, partPlaylists);
+        const basePartPlaylists = buildPlaylistsForPart(idSet, normalizedPlaylists);
+        let activePlaylists = mergePlaylistsList(basePartPlaylists, bucket.extraPlaylists || []);
+        let jsonStr = buildPartJsonString(bucket.compactItems, activePlaylists);
 
-        // 万が一プレイリスト同梱でsafeMaxBytesをわずかに超える場合は、該当パートのプレイリストを次パートへ逃がしてサイズ厳守
-        let activePlaylists = partPlaylists;
         const deferredPlaylists = [];
         while (getByteLength(jsonStr) > safeMaxBytes && activePlaylists.length > 0) {
           deferredPlaylists.unshift(activePlaylists.pop());
@@ -2611,10 +2702,9 @@
         playlists = parsedRes.playlists;
       } else if (Array.isArray(data.parts)) {
         playlists = Array.isArray(data.playlists) ? normalizePlaylists(data.playlists) : [];
-        const baseUrl = config.syncUrl.slice(0, config.syncUrl.lastIndexOf('/') + 1);
         for (let i = 0; i < data.parts.length; i++) {
           const partFile = data.parts[i];
-          const partUrl = partFile.startsWith('http') ? partFile : `${baseUrl}${partFile}`;
+          const partUrl = resolvePartUrl(partFile, config.syncUrl);
           const pct = Math.round((i / data.parts.length) * 80) + 10;
           setProgress(true, `分割ファイル取得中 (${i + 1}/${data.parts.length}: ${partFile})...`, pct);
           const pRes = await fetch(partUrl, { headers });
@@ -2622,7 +2712,7 @@
           const partJson = await pRes.json();
           const partParsed = parseJsonContentToLibrary(partJson, merged.length);
           merged = merged.concat(partParsed.tracks);
-          if (playlists.length === 0 && partParsed.playlists.length > 0) {
+          if (partParsed.playlists.length > 0) {
             playlists = mergePlaylistsList(playlists, partParsed.playlists);
           }
         }
@@ -2731,7 +2821,7 @@
       const hasTerms = terms.length > 0;
       const total = allTracks.length;
 
-      const candidateTrackIds = new Set();
+      const playlistCandidateIds = new Set();
 
       for (let i = 0; i < total; i++) {
         const t = allTracks[i];
@@ -2744,7 +2834,7 @@
         const okPlaylist = !playlistTrackSet || playlistTrackSet.has(t.id);
 
         if (okGenre && okYear && okArtist && okAlbum) {
-          candidateTrackIds.add(t.id);
+          playlistCandidateIds.add(t.id);
         }
 
         if (okYear && okArtist && okAlbum && okPlaylist && t.genre) {
@@ -2765,7 +2855,7 @@
         const pl = allPlaylists[i];
         let cnt = 0;
         for (let j = 0; j < pl.trackIds.length; j++) {
-          if (candidateTrackIds.has(pl.trackIds[j])) cnt++;
+          if (playlistCandidateIds.has(pl.trackIds[j])) cnt++;
         }
         if (cnt > 0 || pl.name === selPlaylist) {
           playlistCounts.set(pl.name, cnt);
@@ -3054,8 +3144,13 @@
       }
     });
 
+    dom.nextTrackBtn.addEventListener('click', () => {
+      playNextFilteredTrack(false);
+    });
     dom.closePlayerBtn.addEventListener('click', stopMiniPlayer);
-    dom.barAudio.addEventListener('ended', stopMiniPlayer);
+    dom.barAudio.addEventListener('ended', () => {
+      playNextFilteredTrack(true);
+    });
 
     // JSON出力
     document.getElementById('openExportBtn').addEventListener('click', () => {
